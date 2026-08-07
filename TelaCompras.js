@@ -2,13 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, Animated, KeyboardAvoidingView,
-  Platform, ScrollView, SafeAreaView, Dimensions, Alert, // Adicionado Alert aqui
+  Platform, ScrollView, SafeAreaView, Dimensions, Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "./supabase"; // Importação do cliente Supabase
 import { CORES } from "./theme";
 
 const { width } = Dimensions.get("window");
-const STORAGE_KEY = "@lista_compras_v2";
 
 const CATEGORIAS = [
   { id: "todos",      label: "Todos",      emoji: "✦",  cor: CORES.primaria },
@@ -38,8 +37,13 @@ function ItemLista({ item, onToggle, onRemover, onEditar }) {
 
   return (
     <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }, item.comprado && s.cardComprado]}>
-      <View style={[s.cardAccent, { backgroundColor: item.comprado ? CORES.textoClaro : cat.cor }]} />
-      <View style={{ flex: 1, gap: 3 }}>
+      <TouchableOpacity 
+        style={[s.cardAccent, { backgroundColor: item.comprado ? CORES.textoClaro : cat.cor }]} 
+        onPress={() => onToggle(item.id, item.comprado)}
+        activeOpacity={0.8}
+      />
+      
+      <TouchableOpacity style={{ flex: 1, gap: 3 }} onPress={() => onToggle(item.id, item.comprado)} activeOpacity={0.8}>
         <Text style={[s.itemNome, item.comprado && s.itemNomeComprado]} numberOfLines={1}>
           {item.quantidade > 1 ? `${item.quantidade}x ` : ""}{item.nome}
         </Text>
@@ -47,7 +51,7 @@ function ItemLista({ item, onToggle, onRemover, onEditar }) {
           <Text style={{ fontSize: 10 }}>{cat.emoji}</Text>
           <Text style={[s.catTagTexto, { color: cat.cor }]}>{cat.label}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       <View style={{ alignItems: "flex-end", gap: 6 }}>
         <Text style={[s.itemValor, item.comprado && { color: CORES.textoClaro }]}>{formatBRL(totalItem)}</Text>
@@ -78,23 +82,42 @@ function TelaFormularioItem({ voltar, itemParaEditar }) {
   const salvar = async () => {
     if (!nome.trim()) { setErroNome(true); return; }
     try {
-      const json = await AsyncStorage.getItem(STORAGE_KEY);
-      let itens = json ? JSON.parse(json) : [];
+      const valorFormatado = parseFloat(valor.replace(",", ".")) || 0;
+      const qtdFormatada = parseInt(quantidade) || 1;
 
       if (itemParaEditar) {
-        itens = itens.map(i => i.id === itemParaEditar.id ? { 
-          ...i, nome: nome.trim(), valor: valor.replace(",", "."), quantidade, categoria 
-        } : i);
+        // Atualiza item existente no Supabase
+        const { error } = await supabase
+          .from('compras')
+          .update({ 
+            nome: nome.trim(), 
+            valor: valorFormatado, 
+            quantidade: qtdFormatada, 
+            categoria 
+          })
+          .eq('id', itemParaEditar.id);
+
+        if (error) throw error;
       } else {
-        itens = [{ 
-          id: Date.now().toString(), nome: nome.trim(), valor: valor.replace(",", "."), 
-          quantidade, categoria, comprado: false 
-        }, ...itens];
+        // Insere novo item no Supabase
+        const { error } = await supabase
+          .from('compras')
+          .insert([{ 
+            nome: nome.trim(), 
+            valor: valorFormatado, 
+            quantidade: qtdFormatada, 
+            categoria, 
+            comprado: false 
+          }]);
+
+        if (error) throw error;
       }
 
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(itens));
       voltar();
-    } catch (e) { console.log(e); }
+    } catch (e) {
+      console.log("Erro ao salvar no Supabase:", e);
+      Alert.alert("Erro", "Não foi possível salvar o item.");
+    }
   };
 
   return (
@@ -152,9 +175,19 @@ export default function TelaCompras() {
 
   useEffect(() => { carregarItens(); }, []);
 
+  // Busca os dados diretamente do Supabase ordenados por data de criação decrescente
   const carregarItens = async () => {
-    const json = await AsyncStorage.getItem(STORAGE_KEY);
-    if (json) setItens(JSON.parse(json));
+    try {
+      const { data, error } = await supabase
+        .from('compras')
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) throw error;
+      if (data) setItens(data);
+    } catch (e) {
+      console.log("Erro ao carregar do Supabase:", e);
+    }
   };
 
   const abrirEdicao = (item) => {
@@ -162,19 +195,40 @@ export default function TelaCompras() {
     setExibirForm(true);
   };
 
-  const toggle = (id) => {
-    const n = itens.map(i => i.id === id ? { ...i, comprado: !i.comprado } : i);
-    setItens(n);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(n));
+  const toggle = async (id, statusAtual) => {
+    // Atualização otimista na tela para dar resposta imediata
+    setItens(itens.map(i => i.id === id ? { ...i, comprado: !statusAtual } : i));
+
+    try {
+      const { error } = await supabase
+        .from('compras')
+        .update({ comprado: !statusAtual })
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (e) {
+      console.log("Erro ao atualizar status:", e);
+      carregarItens(); // Reverte se falhar
+    }
   };
 
-  const remover = (id) => {
-    const n = itens.filter(i => i.id !== id);
-    setItens(n);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(n));
+  const remover = async (id) => {
+    // Remoção otimista na tela
+    setItens(itens.filter(i => i.id !== id));
+
+    try {
+      const { error } = await supabase
+        .from('compras')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (e) {
+      console.log("Erro ao excluir item:", e);
+      carregarItens(); // Reverte se falhar
+    }
   };
 
-  // NOVA FUNÇÃO: Confirmar e Limpar Lista
   const confirmarLimpeza = () => {
     if (itens.length === 0) return;
 
@@ -188,7 +242,18 @@ export default function TelaCompras() {
           style: "destructive", 
           onPress: async () => {
             setItens([]);
-            await AsyncStorage.removeItem(STORAGE_KEY);
+            try {
+              // Apaga todos os registros da tabela compras no Supabase
+              const { error } = await supabase
+                .from('compras')
+                .delete()
+                .neq('id', 0); // Deleta tudo onde o ID é diferente de zero
+
+              if (error) throw error;
+            } catch (e) {
+              console.log("Erro ao limpar lista:", e);
+              carregarItens();
+            }
           } 
         }
       ]
@@ -199,7 +264,6 @@ export default function TelaCompras() {
 
   const filtrados = catFiltro === "todos" ? itens : itens.filter(i => i.categoria === catFiltro);
   const totalGeral = itens.reduce((s, i) => s + (parseFloat(i.valor) * (parseInt(i.quantidade) || 1)), 0);
-  
 
   return (
     <SafeAreaView style={s.container}>
@@ -211,9 +275,6 @@ export default function TelaCompras() {
           </View>
           
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {/* BOTÃO LIMPAR LISTA */}
-            
-
             <TouchableOpacity style={s.fabAdd} onPress={() => setExibirForm(true)}>
               <Text style={s.fabAddTexto}>＋</Text>
             </TouchableOpacity>
@@ -239,7 +300,7 @@ export default function TelaCompras() {
         ))}
       </ScrollView>
 
-      <FlatList data={filtrados} keyExtractor={i => i.id} contentContainerStyle={s.lista}
+      <FlatList data={filtrados} keyExtractor={i => i.id.toString()} contentContainerStyle={s.lista}
         renderItem={({ item }) => <ItemLista item={item} onToggle={toggle} onRemover={remover} onEditar={abrirEdicao} />}
         ListEmptyComponent={<View style={s.vazio}><Text style={s.vazioEmoji}>🛒</Text><Text style={s.vazioTexto}>Lista vazia</Text></View>}
       />
@@ -253,11 +314,8 @@ const s = StyleSheet.create({
   headerRow:          { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   headerSub:          { color: CORES.textoMedio, fontSize: 13 },
   headerTitulo:       { color: CORES.textoEscuro, fontSize: 26, fontWeight: "800" },
-  
-  // Estilo do Botão Limpar
   btnLimpar:          { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: CORES.fundoElevado, borderWidth: 1, borderColor: CORES.borda, justifyContent: 'center' },
   btnLimparTexto:     { color: CORES.erro, fontSize: 12, fontWeight: "700" },
-
   fabAdd:             { width: 46, height: 46, borderRadius: 23, backgroundColor: CORES.primaria, alignItems: "center", justifyContent: "center" },
   fabAddTexto:        { color: "#fff", fontSize: 24 },
   statsRow:           { flexDirection: "row", gap: 8, marginBottom: 14 },
@@ -272,9 +330,6 @@ const s = StyleSheet.create({
   card:               { flexDirection: "row", alignItems: "center", backgroundColor: CORES.fundoCard, borderRadius: 16, padding: 14, gap: 12, borderWidth: 1, borderColor: CORES.borda, overflow: "hidden" },
   cardComprado:       { opacity: 0.5 },
   cardAccent:         { position: "absolute", left: 0, top: 0, bottom: 0, width: 3 },
-  checkbox:           { width: 28, height: 28, borderRadius: 9, borderWidth: 2, borderColor: CORES.borda, alignItems: "center", justifyContent: "center" },
-  checkDot:           { width: 8, height: 8, borderRadius: 4 },
-  checkmark:          { fontSize: 14, fontWeight: "800" },
   itemNome:           { fontSize: 15, color: CORES.textoEscuro, fontWeight: "600" },
   itemNomeComprado:   { color: CORES.textoClaro, textDecorationLine: "line-through" },
   catTag:             { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, alignSelf: "flex-start" },
