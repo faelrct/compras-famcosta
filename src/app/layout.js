@@ -1,14 +1,14 @@
+import './globals.css';
+
 export const metadata = {
   title: 'Lista de Compras - FamCosta',
-  description: 'Lista de compras compartilhada',
+  description: 'Aplicativo de lista de compras',
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body className="bg-[#111116] text-white">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
