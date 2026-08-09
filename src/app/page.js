@@ -1,3 +1,5 @@
+'use client'; // <-- Adicione exatamente esta linha no topo!
+
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
