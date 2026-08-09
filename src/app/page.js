@@ -1,4 +1,4 @@
-'use client'; // <-- Adicione exatamente esta linha no topo!
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
@@ -15,6 +15,17 @@ const CATEGORIES = [
   { name: 'Higiene', icon: '🪥' },
   { name: 'Outros', icon: '📦' },
 ];
+
+// Função utilitária para aplicar a máscara de moeda (ex: 1250 -> "12,50")
+const formatCurrency = (value) => {
+  const digitsOnly = value.replace(/\D/g, '');
+  if (!digitsOnly) return '';
+  const numberValue = parseFloat(digitsOnly) / 100;
+  return numberValue.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
 
 export default function App() {
   const [items, setItems] = useState([]);
@@ -49,13 +60,23 @@ export default function App() {
     if (!error && data) setItems(data);
   };
 
+  // Handler para digitar o valor formatado em tempo real
+  const handlePriceChange = (e) => {
+    setPrice(formatCurrency(e.target.value));
+  };
+
   // Abrir modal para Adicionar ou Editar
   const openModal = (item = null) => {
     if (item) {
       setEditingItem(item);
       setName(item.name);
       setQuantity(item.quantity);
-      setPrice(item.price.toString());
+      // Formata o número vindo do banco (ex: 12.5 -> "12,50")
+      setPrice(
+        item.price
+          ? item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : ''
+      );
       setCategory(item.category);
     } else {
       setEditingItem(null);
@@ -70,7 +91,8 @@ export default function App() {
   // Salvar Item (Criar ou Atualizar)
   const handleSave = async (e) => {
     e.preventDefault();
-    const numericPrice = parseFloat(price.replace(',', '.')) || 0;
+    // Converte "12,50" ou "1.250,50" para o número float (12.50 ou 1250.50)
+    const numericPrice = parseFloat(price.replace(/\./g, '').replace(',', '.')) || 0;
 
     if (editingItem) {
       await supabase
@@ -125,7 +147,7 @@ export default function App() {
 
         {/* Cards de Métricas e Ações */}
         <div className="grid grid-cols-3 gap-3">
-          {/* Valor Total (Canto Superior Esquerdo) */}
+          {/* Valor Total */}
           <div className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-between border border-[#272732]">
             <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Total</span>
             <span className="text-sm font-bold text-white mt-1">
@@ -139,7 +161,7 @@ export default function App() {
             <span className="text-sm font-bold text-white mt-1">{totalItemsCount}</span>
           </div>
 
-          {/* Botão de Apagar Lista (Canto Superior Direito) */}
+          {/* Botão de Apagar Lista */}
           <button
             onClick={handleClearAll}
             className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-center items-center border border-[#272732] hover:bg-red-950/30 transition-colors"
@@ -257,10 +279,10 @@ export default function App() {
                   <label className="text-xs text-gray-400 block mb-1">Valor Unitário (R$)</label>
                   <input
                     type="text"
-                    required
+                    inputMode="numeric"
                     placeholder="0,00"
                     value={price}
-                    onChange={(e) => setPrice(e.target.value)}
+                    onChange={handlePriceChange}
                     className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#FF5722]"
                   />
                 </div>

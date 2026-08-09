@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Lista de Compras - FamCosta',
+  title: 'Lista de Compras',
   description: 'Aplicativo de lista de compras',
 };
 
