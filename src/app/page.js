@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // Inicialize com suas credenciais do Supabase
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://abopaplifnrruoxjfrgn.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_aF9Bv3DasCcCA7s3wDCgDg_GFOldXrw';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnrruoxjfrgn.supabase.co';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_af9Bv3DasCcCA7s3wDCgDg_GF0ldXrw';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const CATEGORIES = [
