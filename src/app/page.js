@@ -235,15 +235,34 @@ export default function App() {
     }
   };
 
-  // --- AÇÕES FATURA (INDIVIDUAL) ---
+// --- AÇÕES FATURA (INDIVIDUAL) ---
   const handleSaveAvailableMoney = async (e) => {
     e.preventDefault();
     const numericMoney = parseFloat(moneyInput.replace(/\./g, '').replace(',', '.')) || 0;
     
-    const { error } = await supabase.from('fatura_config').upsert(
-      { user_id: session.user.id, available_money: numericMoney },
-      { onConflict: 'user_id' }
-    );
+    // 1. Verifica se já existe uma configuração salva para este usuário
+    const { data: existingConfig } = await supabase
+      .from('fatura_config')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
+    let error;
+
+    if (existingConfig) {
+      // Atualiza o registro existente
+      const res = await supabase
+        .from('fatura_config')
+        .update({ available_money: numericMoney })
+        .eq('user_id', session.user.id);
+      error = res.error;
+    } else {
+      // Insere um novo registro caso ainda não exista
+      const res = await supabase
+        .from('fatura_config')
+        .insert([{ user_id: session.user.id, available_money: numericMoney }]);
+      error = res.error;
+    }
 
     if (error) {
       alert('Erro ao atualizar dinheiro disponível: ' + error.message);
