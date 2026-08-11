@@ -8,8 +8,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnr
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// SITE KEY DO CLOUDFLARE TURNSTILE:
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
+// SITE KEY DO CLOUDFLARE TURNSTILE (ATUALIZADA)
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEMqBGt8_k0H6FSp';
 
 const SHOP_CATEGORIES = [
   { name: 'Todos', icon: '✨' },
@@ -150,7 +150,6 @@ export default function App() {
     setAuthError('');
     setAuthLoading(true);
 
-    // Converte o nome de usuário no formato de e-mail interno
     const formattedEmail = authUsername.includes('@') 
       ? authUsername.trim() 
       : `${authUsername.trim().toLowerCase()}@app.local`;
@@ -163,7 +162,7 @@ export default function App() {
       });
       if (error) throw error;
     } catch (err) {
-      setAuthError('Usuário ou senha incorretos.');
+      setAuthError(err.message || 'Erro ao realizar login.');
     } finally {
       setAuthLoading(false);
     }
@@ -433,7 +432,7 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => openAddFaturaItem(sec.id)}
-                    className={`w-9 h-9 rounded-xl font-bold text-lg flex items-center justify-center`}
+                    className="w-9 h-9 rounded-xl font-bold text-lg flex items-center justify-center"
                     style={{ backgroundColor: sec.bg, color: sec.color, borderColor: sec.border, borderWidth: '1px' }}
                   >
                     +
