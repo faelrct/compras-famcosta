@@ -82,29 +82,29 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // CARREGAR CLOUDFLARE TURNSTILE WIDGET
-  useEffect(() => {
-    if (!session && typeof window !== 'undefined') {
-      const scriptId = 'turnstile-script';
-      if (!document.getElementById(scriptId)) {
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
-        script.async = true;
-        script.defer = true;
-        document.body.appendChild(script);
-      }
+  // CARREGAR CLOUDFLARE TURNSTILE WIDGET E REGISTRAR CALLBACKS
+useEffect(() => {
+  if (!session && typeof window !== 'undefined') {
+    // Registra a função global para salvar o token quando o Turnstile validar
+    window.onTurnstileSuccess = (token) => {
+      setCaptchaToken(token);
+    };
 
-      window.onloadTurnstileCallback = () => {
-        if (window.turnstile && turnstileRef.current) {
-          window.turnstile.render(turnstileRef.current, {
-            sitekey: TURNSTILE_SITE_KEY,
-            callback: (token) => setCaptchaToken(token),
-          });
-        }
-      };
+    window.onTurnstileExpire = () => {
+      setCaptchaToken('');
+    };
+
+    const scriptId = 'turnstile-script';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
     }
-  }, [session]);
+  }
+}, [session]);
 
   // 2. BUSCAR DADOS QUANDO LOGADO
   useEffect(() => {
@@ -146,27 +146,33 @@ export default function App() {
 
   // --- LOGIN POR USUÁRIO ---
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setAuthLoading(true);
+  e.preventDefault();
+  setAuthError('');
 
-    const formattedEmail = authUsername.includes('@') 
-      ? authUsername.trim() 
-      : `${authUsername.trim().toLowerCase()}@app.local`;
+  if (!captchaToken) {
+    setAuthError('Por favor, aguarde o captcha confirmar a verificação.');
+    return;
+  }
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: formattedEmail,
-        password: authPassword,
-        options: { captchaToken }
-      });
-      if (error) throw error;
-    } catch (err) {
-      setAuthError(err.message || 'Erro ao realizar login.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
+  setAuthLoading(true);
+
+  const formattedEmail = authUsername.includes('@') 
+    ? authUsername.trim() 
+    : `${authUsername.trim().toLowerCase()}@app.local`;
+
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: formattedEmail,
+      password: authPassword,
+      options: { captchaToken }
+    });
+    if (error) throw error;
+  } catch (err) {
+    setAuthError(err.message || 'Erro ao realizar login.');
+  } finally {
+    setAuthLoading(false);
+  }
+};
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -325,7 +331,12 @@ export default function App() {
 
             {/* Cloudflare Turnstile CAPTCHA Widget Container */}
             <div className="flex justify-center my-1">
-              <div ref={turnstileRef} className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY}></div>
+              <div 
+                className="cf-turnstile" 
+                data-sitekey={TURNSTILE_SITE_KEY}
+                data-callback="onTurnstileSuccess"
+                data-expired-callback="onTurnstileExpire"
+              ></div>
             </div>
 
             <button
