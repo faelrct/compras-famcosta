@@ -16,7 +16,7 @@ const SHOP_CATEGORIES = [
   { name: 'Outros', icon: '📦' },
 ];
 
-// Máscara de Moeda BRL
+// Máscaras e Formatações de Moeda
 const formatCurrencyInput = (value) => {
   const digitsOnly = value.replace(/\D/g, '');
   if (!digitsOnly) return '';
@@ -28,12 +28,12 @@ const formatCurrencyInput = (value) => {
 };
 
 const formatBRL = (val) => {
-  return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Number(val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 export default function App() {
-  // Navegação Principal
-  const [activeTab, setActiveTab] = useState('fatura'); // 'fatura' | 'compras' | 'calcular' | 'emprestimos'
+  // Navegação Principal (Apenas 2 abas agora)
+  const [activeTab, setActiveTab] = useState('fatura'); // 'fatura' | 'compras'
 
   // --- ESTADO DA LISTA DE COMPRAS ---
   const [shopItems, setShopItems] = useState([]);
@@ -54,20 +54,20 @@ export default function App() {
   const [isFaturaModalOpen, setIsFaturaModalOpen] = useState(false);
   const [faturaTargetCategory, setFaturaTargetCategory] = useState('mae'); // 'mae' | 'meu_cartao' | 'a_receber'
   const [faturaDescription, setFaturaDescription] = useState('');
-  const [faturaAmountInput, setFaturaAmountInput] = useState('');
+  const [faturaTotalAmountInput, setFaturaTotalAmountInput] = useState('');
+  const [faturaInstallments, setFaturaInstallments] = useState(1);
 
   // --- BUSCAR DADOS DO SUPABASE ---
   useEffect(() => {
     fetchShopItems();
     fetchFaturaData();
 
-    // Inscrição em Tempo Real para Compras
+    // Inscrição em Tempo Real
     const shopChannel = supabase
       .channel('realtime-items')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, () => fetchShopItems())
       .subscribe();
 
-    // Inscrição em Tempo Real para Fatura
     const faturaChannel = supabase
       .channel('realtime-fatura')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fatura_items' }, () => fetchFaturaData())
@@ -149,37 +149,54 @@ export default function App() {
   const openAddFaturaItem = (categoryKey) => {
     setFaturaTargetCategory(categoryKey);
     setFaturaDescription('');
-    setFaturaAmountInput('');
+    setFaturaTotalAmountInput('');
+    setFaturaInstallments(1);
     setIsFaturaModalOpen(true);
   };
 
   const handleSaveFaturaItem = async (e) => {
     e.preventDefault();
-    const numericAmount = parseFloat(faturaAmountInput.replace(/\./g, '').replace(',', '.')) || 0;
+    const totalAmount = parseFloat(faturaTotalAmountInput.replace(/\./g, '').replace(',', '.')) || 0;
+    const installmentsCount = parseInt(faturaInstallments) || 1;
+    
+    // Parcela Mensal
+    const monthlyAmount = totalAmount / installmentsCount;
 
-    await supabase.from('fatura_items').insert([
-      { description: faturaDescription, amount: numericAmount, category: faturaTargetCategory }
+    const { error } = await supabase.from('fatura_items').insert([
+      { 
+        description: faturaDescription, 
+        total_amount: totalAmount,
+        installments: installmentsCount,
+        amount: monthlyAmount, 
+        category: faturaTargetCategory 
+      }
     ]);
 
-    setIsFaturaModalOpen(false);
+    if (error) {
+      alert('Erro ao salvar item na fatura: ' + error.message);
+    } else {
+      setIsFaturaModalOpen(false);
+      fetchFaturaData();
+    }
   };
 
   const handleDeleteFaturaItem = async (id) => {
     await supabase.from('fatura_items').delete().eq('id', id);
+    fetchFaturaData();
   };
 
   // Cálculos de Totais da Fatura
   const aReceberTotal = faturaItems
     .filter(i => i.category === 'a_receber')
-    .reduce((acc, i) => acc + Number(i.amount), 0);
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
   const cartaoMaeTotal = faturaItems
     .filter(i => i.category === 'mae')
-    .reduce((acc, i) => acc + Number(i.amount), 0);
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
   const meuCartaoTotal = faturaItems
     .filter(i => i.category === 'meu_cartao')
-    .reduce((acc, i) => acc + Number(i.amount), 0);
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
   const saldoFinal = availableMoney + aReceberTotal - cartaoMaeTotal - meuCartaoTotal;
 
@@ -287,11 +304,21 @@ export default function App() {
                   <p className="text-xs text-gray-500 text-center py-2">Nenhum item adicionado</p>
                 ) : (
                   faturaItems.filter(i => i.category === 'mae').map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-2.5 rounded-xl border border-[#232332] text-xs">
-                      <span className="font-medium text-gray-200">{item.description}</span>
+                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-3 rounded-xl border border-[#232332] text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-gray-100">{item.description}</span>
+                        <span className="text-[10px] text-gray-400">
+                          Total: R$ {formatBRL(item.total_amount || item.amount)} {item.installments > 1 ? `(${item.installments}x)` : ''}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#FF4081]">R$ {formatBRL(item.amount)}</span>
-                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                        <div className="text-right">
+                          <span className="font-bold text-[#FF4081] block">R$ {formatBRL(item.amount)}</span>
+                          {item.installments > 1 && (
+                            <span className="text-[9px] text-gray-400 block">/mês</span>
+                          )}
+                        </div>
+                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1 text-sm">✕</button>
                       </div>
                     </div>
                   ))
@@ -322,11 +349,21 @@ export default function App() {
                   <p className="text-xs text-gray-500 text-center py-2">Nenhum item adicionado</p>
                 ) : (
                   faturaItems.filter(i => i.category === 'meu_cartao').map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-2.5 rounded-xl border border-[#232332] text-xs">
-                      <span className="font-medium text-gray-200">{item.description}</span>
+                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-3 rounded-xl border border-[#232332] text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-gray-100">{item.description}</span>
+                        <span className="text-[10px] text-gray-400">
+                          Total: R$ {formatBRL(item.total_amount || item.amount)} {item.installments > 1 ? `(${item.installments}x)` : ''}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#00B0FF]">R$ {formatBRL(item.amount)}</span>
-                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                        <div className="text-right">
+                          <span className="font-bold text-[#00B0FF] block">R$ {formatBRL(item.amount)}</span>
+                          {item.installments > 1 && (
+                            <span className="text-[9px] text-gray-400 block">/mês</span>
+                          )}
+                        </div>
+                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1 text-sm">✕</button>
                       </div>
                     </div>
                   ))
@@ -357,11 +394,13 @@ export default function App() {
                   <p className="text-xs text-gray-500 text-center py-2">Nenhum item adicionado</p>
                 ) : (
                   faturaItems.filter(i => i.category === 'a_receber').map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-2.5 rounded-xl border border-[#232332] text-xs">
-                      <span className="font-medium text-gray-200">{item.description}</span>
+                    <div key={item.id} className="flex justify-between items-center bg-[#111118] p-3 rounded-xl border border-[#232332] text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-gray-100">{item.description}</span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-[#00E676]">R$ {formatBRL(item.amount)}</span>
-                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                        <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1 text-sm">✕</button>
                       </div>
                     </div>
                   ))
@@ -463,40 +502,25 @@ export default function App() {
           </>
         )}
 
-        {/* ========================================================
-            ABAS EM DESENVOLVIMENTO (CALCULAR / EMPRÉSTIMO)
-           ======================================================== */}
-        {(activeTab === 'calcular' || activeTab === 'emprestimos') && (
-          <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-            <span className="text-4xl">{activeTab === 'calcular' ? '🧮' : '💜'}</span>
-            <h2 className="text-lg font-bold text-white">
-              {activeTab === 'calcular' ? 'Calculadora de Compras' : 'Gestão de Empréstimos'}
-            </h2>
-            <p className="text-xs text-gray-400 max-w-xs">
-              Esta aba estará disponível na próxima atualização do sistema!
-            </p>
-          </div>
-        )}
-
       </div>
 
       {/* ========================================================
-          BARRA DE NAVEGAÇÃO INFERIOR (TAB BAR - FIXA)
+          BARRA DE NAVEGAÇÃO INFERIOR (APENAS FATURA E COMPRAS)
          ======================================================== */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#121218]/95 backdrop-blur-md border-t border-[#22222E] flex justify-around items-center py-2.5 z-40 max-w-md mx-auto">
         
         {/* Tab 1: Fatura */}
         <button
           onClick={() => setActiveTab('fatura')}
-          className="flex flex-col items-center gap-1 relative px-3 py-1"
+          className="flex flex-col items-center gap-1 relative px-8 py-1"
         >
           {activeTab === 'fatura' && (
-            <div className="absolute -top-2.5 w-10 h-1 bg-[#FFB74D] rounded-full" />
+            <div className="absolute -top-2.5 w-12 h-1 bg-[#FFB74D] rounded-full" />
           )}
           <span className={`text-xl ${activeTab === 'fatura' ? 'opacity-100 scale-110' : 'opacity-40'} transition-all`}>
             📊
           </span>
-          <span className={`text-[10px] font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>
+          <span className={`text-xs font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>
             Fatura
           </span>
         </button>
@@ -504,48 +528,16 @@ export default function App() {
         {/* Tab 2: Compras */}
         <button
           onClick={() => setActiveTab('compras')}
-          className="flex flex-col items-center gap-1 relative px-3 py-1"
+          className="flex flex-col items-center gap-1 relative px-8 py-1"
         >
           {activeTab === 'compras' && (
-            <div className="absolute -top-2.5 w-10 h-1 bg-[#FF5722] rounded-full" />
+            <div className="absolute -top-2.5 w-12 h-1 bg-[#FF5722] rounded-full" />
           )}
           <span className={`text-xl ${activeTab === 'compras' ? 'opacity-100 scale-110' : 'opacity-40'} transition-all`}>
             🛒
           </span>
-          <span className={`text-[10px] font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>
+          <span className={`text-xs font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>
             Compras
-          </span>
-        </button>
-
-        {/* Tab 3: Calcular */}
-        <button
-          onClick={() => setActiveTab('calcular')}
-          className="flex flex-col items-center gap-1 relative px-3 py-1"
-        >
-          {activeTab === 'calcular' && (
-            <div className="absolute -top-2.5 w-10 h-1 bg-[#00E676] rounded-full" />
-          )}
-          <span className={`text-xl ${activeTab === 'calcular' ? 'opacity-100 scale-110' : 'opacity-40'} transition-all`}>
-            🧮
-          </span>
-          <span className={`text-[10px] font-bold ${activeTab === 'calcular' ? 'text-[#00E676]' : 'text-gray-500'}`}>
-            Calcular
-          </span>
-        </button>
-
-        {/* Tab 4: Empréstim. */}
-        <button
-          onClick={() => setActiveTab('emprestimos')}
-          className="flex flex-col items-center gap-1 relative px-3 py-1"
-        >
-          {activeTab === 'emprestimos' && (
-            <div className="absolute -top-2.5 w-10 h-1 bg-[#AB47BC] rounded-full" />
-          )}
-          <span className={`text-xl ${activeTab === 'emprestimos' ? 'opacity-100 scale-110' : 'opacity-40'} transition-all`}>
-            💜
-          </span>
-          <span className={`text-[10px] font-bold ${activeTab === 'emprestimos' ? 'text-[#AB47BC]' : 'text-gray-500'}`}>
-            Empréstim.
           </span>
         </button>
       </div>
@@ -592,7 +584,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 2: Adicionar Item na Fatura */}
+      {/* Modal 2: Adicionar Item na Fatura (COM VALOR TOTAL E PARCELAS) */}
       {isFaturaModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 z-50">
           <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -605,25 +597,56 @@ export default function App() {
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Parcela Geladeira, Salário"
+                  placeholder="Ex: Geladeira, Salário, Internet"
                   value={faturaDescription}
                   onChange={(e) => setFaturaDescription(e.target.value)}
                   className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
                 />
               </div>
 
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Valor (R$)</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  placeholder="0,00"
-                  value={faturaAmountInput}
-                  onChange={(e) => setFaturaAmountInput(formatCurrencyInput(e.target.value))}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
-                />
+              <div className={`grid ${faturaTargetCategory === 'a_receber' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Valor Total (R$)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    placeholder="0,00"
+                    value={faturaTotalAmountInput}
+                    onChange={(e) => setFaturaTotalAmountInput(formatCurrencyInput(e.target.value))}
+                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                  />
+                </div>
+
+                {faturaTargetCategory !== 'a_receber' && (
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Dividir em (x)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="72"
+                      required
+                      value={faturaInstallments}
+                      onChange={(e) => setFaturaInstallments(e.target.value)}
+                      className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                    />
+                  </div>
+                )}
               </div>
+
+              {/* Prévia da Parcela se for mais de 1x */}
+              {faturaTargetCategory !== 'a_receber' && Number(faturaInstallments) > 1 && (
+                <div className="bg-[#111116] p-2.5 rounded-xl border border-[#272732] text-xs text-gray-300 flex justify-between items-center">
+                  <span>Valor mensal:</span>
+                  <span className="font-bold text-[#00E676]">
+                    {faturaInstallments}x de R${' '}
+                    {formatBRL(
+                      (parseFloat(faturaTotalAmountInput.replace(/\./g, '').replace(',', '.')) || 0) /
+                        (parseInt(faturaInstallments) || 1)
+                    )}
+                  </span>
+                </div>
+              )}
 
               <div className="flex gap-2 mt-2">
                 <button
