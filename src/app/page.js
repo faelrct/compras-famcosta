@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // Credenciais Supabase
@@ -41,12 +41,11 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
-  const turnstileRef = useRef(null);
 
   // Navegação
   const [activeTab, setActiveTab] = useState('fatura');
 
-  // Compras (Compartilhadas)
+  // Compras (Compartilhadas / Universal)
   const [shopItems, setShopItems] = useState([]);
   const [selectedShopCategory, setSelectedShopCategory] = useState('Todos');
   const [isShopModalOpen, setIsShopModalOpen] = useState(false);
@@ -56,7 +55,7 @@ export default function App() {
   const [shopPrice, setShopPrice] = useState('');
   const [shopCategory, setShopCategory] = useState('Comidas');
 
-  // Fatura (Individual)
+  // Fatura (Individual por Usuário)
   const [availableMoney, setAvailableMoney] = useState(0);
   const [faturaItems, setFaturaItems] = useState([]);
   const [isEditMoneyOpen, setIsEditMoneyOpen] = useState(false);
@@ -83,28 +82,27 @@ export default function App() {
   }, []);
 
   // CARREGAR CLOUDFLARE TURNSTILE WIDGET E REGISTRAR CALLBACKS
-useEffect(() => {
-  if (!session && typeof window !== 'undefined') {
-    // Registra a função global para salvar o token quando o Turnstile validar
-    window.onTurnstileSuccess = (token) => {
-      setCaptchaToken(token);
-    };
+  useEffect(() => {
+    if (!session && typeof window !== 'undefined') {
+      window.onTurnstileSuccess = (token) => {
+        setCaptchaToken(token);
+      };
 
-    window.onTurnstileExpire = () => {
-      setCaptchaToken('');
-    };
+      window.onTurnstileExpire = () => {
+        setCaptchaToken('');
+      };
 
-    const scriptId = 'turnstile-script';
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
-      script.async = true;
-      script.defer = true;
-      document.body.appendChild(script);
+      const scriptId = 'turnstile-script';
+      if (!document.getElementById(scriptId)) {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+        script.async = true;
+        script.defer = true;
+        document.body.appendChild(script);
+      }
     }
-  }
-}, [session]);
+  }, [session]);
 
   // 2. BUSCAR DADOS QUANDO LOGADO
   useEffect(() => {
@@ -146,39 +144,39 @@ useEffect(() => {
 
   // --- LOGIN POR USUÁRIO ---
   const handleLogin = async (e) => {
-  e.preventDefault();
-  setAuthError('');
+    e.preventDefault();
+    setAuthError('');
 
-  if (!captchaToken) {
-    setAuthError('Por favor, aguarde o captcha confirmar a verificação.');
-    return;
-  }
+    if (!captchaToken) {
+      setAuthError('Por favor, aguarde o captcha confirmar a verificação.');
+      return;
+    }
 
-  setAuthLoading(true);
+    setAuthLoading(true);
 
-  const formattedEmail = authUsername.includes('@') 
-    ? authUsername.trim() 
-    : `${authUsername.trim().toLowerCase()}@app.local`;
+    const formattedEmail = authUsername.includes('@') 
+      ? authUsername.trim() 
+      : `${authUsername.trim().toLowerCase()}@app.local`;
 
-  try {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: formattedEmail,
-      password: authPassword,
-      options: { captchaToken }
-    });
-    if (error) throw error;
-  } catch (err) {
-    setAuthError(err.message || 'Erro ao realizar login.');
-  } finally {
-    setAuthLoading(false);
-  }
-};
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: authPassword,
+        options: { captchaToken }
+      });
+      if (error) throw error;
+    } catch (err) {
+      setAuthError(err.message || 'Erro ao realizar login.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
-  // --- AÇÕES COMPRAS ---
+  // --- AÇÕES COMPRAS (UNIVERSAL) ---
   const openShopModal = (item = null) => {
     if (item) {
       setEditingShopItem(item);
@@ -200,32 +198,60 @@ useEffect(() => {
     e.preventDefault();
     const numericPrice = parseFloat(shopPrice.replace(/\./g, '').replace(',', '.')) || 0;
 
+    let res;
     if (editingShopItem) {
-      await supabase.from('items').update({ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory }).eq('id', editingShopItem.id);
+      res = await supabase
+        .from('items')
+        .update({ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory })
+        .eq('id', editingShopItem.id);
     } else {
-      await supabase.from('items').insert([{ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory, user_id: session.user.id }]);
+      res = await supabase
+        .from('items')
+        .insert([{ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory, user_id: session.user.id }]);
     }
-    setIsShopModalOpen(false);
+
+    if (res.error) {
+      alert('Erro ao salvar item na lista de compras: ' + res.error.message);
+    } else {
+      setIsShopModalOpen(false);
+      fetchShopItems();
+    }
   };
 
   const handleDeleteShopItem = async (id) => {
-    await supabase.from('items').delete().eq('id', id);
+    const { error } = await supabase.from('items').delete().eq('id', id);
+    if (error) {
+      alert('Erro ao excluir item das compras: ' + error.message);
+    } else {
+      fetchShopItems();
+    }
   };
 
   const handleClearShopList = async () => {
     if (confirm('Tem certeza que deseja apagar toda a lista de compras compartilhada?')) {
-      await supabase.from('items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await supabase.from('items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) alert('Erro ao limpar lista de compras: ' + error.message);
+      else fetchShopItems();
     }
   };
 
-  // --- AÇÕES FATURA ---
+  // --- AÇÕES FATURA (INDIVIDUAL) ---
   const handleSaveAvailableMoney = async (e) => {
     e.preventDefault();
     const numericMoney = parseFloat(moneyInput.replace(/\./g, '').replace(',', '.')) || 0;
     
-    await supabase.from('fatura_config').upsert({ user_id: session.user.id, available_money: numericMoney });
-    setAvailableMoney(numericMoney);
-    setIsEditMoneyOpen(false);
+    const { error } = await supabase.from('fatura_config').upsert(
+      { user_id: session.user.id, available_money: numericMoney },
+      { onConflict: 'user_id' }
+    );
+
+    if (error) {
+      alert('Erro ao atualizar dinheiro disponível: ' + error.message);
+    } else {
+      setAvailableMoney(numericMoney);
+      setIsEditMoneyOpen(false);
+      fetchFaturaData();
+    }
   };
 
   const openAddFaturaItem = (categoryKey) => {
@@ -254,7 +280,7 @@ useEffect(() => {
     ]);
 
     if (error) {
-      alert('Erro ao salvar item: ' + error.message);
+      alert('Erro ao salvar item na fatura: ' + error.message);
     } else {
       setIsFaturaModalOpen(false);
       fetchFaturaData();
@@ -262,8 +288,12 @@ useEffect(() => {
   };
 
   const handleDeleteFaturaItem = async (id) => {
-    await supabase.from('fatura_items').delete().eq('id', id);
-    fetchFaturaData();
+    const { error } = await supabase.from('fatura_items').delete().eq('id', id);
+    if (error) {
+      alert('Erro ao excluir item da fatura: ' + error.message);
+    } else {
+      fetchFaturaData();
+    }
   };
 
   // Cálculos Fatura
@@ -310,7 +340,7 @@ useEffect(() => {
               <input
                 type="text"
                 required
-                placeholder="seu_usuario"
+                placeholder="Digite seu usuário"
                 value={authUsername}
                 onChange={(e) => setAuthUsername(e.target.value)}
                 className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E676]"
