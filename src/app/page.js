@@ -8,8 +8,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnr
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// COLOQUE SUA SITE KEY DO CLOUDFLARE TURNSTILE AQUI:
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'; // Exemplo de chave de teste Cloudflare
+// SITE KEY DO CLOUDFLARE TURNSTILE:
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
 
 const SHOP_CATEGORIES = [
   { name: 'Todos', icon: '✨' },
@@ -35,9 +35,8 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
-  // Login / Registro
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [authEmail, setAuthEmail] = useState('');
+  // Login por Usuário
+  const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -105,7 +104,7 @@ export default function App() {
         }
       };
     }
-  }, [session, isRegisterMode]);
+  }, [session]);
 
   // 2. BUSCAR DADOS QUANDO LOGADO
   useEffect(() => {
@@ -145,31 +144,26 @@ export default function App() {
     if (itemsData) setFaturaItems(itemsData);
   };
 
-  // --- AÇÕES DE AUTENTICAÇÃO ---
-  const handleAuth = async (e) => {
+  // --- LOGIN POR USUÁRIO ---
+  const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
 
+    // Converte o nome de usuário no formato de e-mail interno
+    const formattedEmail = authUsername.includes('@') 
+      ? authUsername.trim() 
+      : `${authUsername.trim().toLowerCase()}@app.local`;
+
     try {
-      if (isRegisterMode) {
-        const { error } = await supabase.auth.signUp({
-          email: authEmail,
-          password: authPassword,
-          options: { captchaToken }
-        });
-        if (error) throw error;
-        alert('Conta criada com sucesso! Você já pode navegar.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password: authPassword,
-          options: { captchaToken }
-        });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: authPassword,
+        options: { captchaToken }
+      });
+      if (error) throw error;
     } catch (err) {
-      setAuthError(err.message || 'Erro de autenticação.');
+      setAuthError('Usuário ou senha incorretos.');
     } finally {
       setAuthLoading(false);
     }
@@ -287,33 +281,33 @@ export default function App() {
     );
   }
 
-  // TELA DE LOGIN / REGISTRO COM CLOUDFLARE TURNSTILE
+  // TELA DE LOGIN (POR USUÁRIO)
   if (!session) {
     return (
       <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center p-4 font-sans select-none">
         <div className="bg-[#181820] border border-[#232330] w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 shadow-2xl">
           <div className="text-center">
-            <h1 className="text-2xl font-black text-white">{isRegisterMode ? 'Criar Conta' : 'Acessar Sistema'}</h1>
+            <h1 className="text-2xl font-black text-white">Acessar Sistema</h1>
             <p className="text-xs text-gray-400 mt-1">
-              {isRegisterMode ? 'Preencha os dados abaixo para cadastrar' : 'Informe seu e-mail e senha para continuar'}
+              Informe seu usuário e senha para continuar
             </p>
           </div>
 
           {authError && (
-            <div className="bg-red-950/50 border border-red-500/50 text-red-300 text-xs p-3 rounded-xl">
+            <div className="bg-red-950/50 border border-red-500/50 text-red-300 text-xs p-3 rounded-xl text-center font-medium">
               {authError}
             </div>
           )}
 
-          <form onSubmit={handleAuth} className="flex flex-col gap-3">
+          <form onSubmit={handleLogin} className="flex flex-col gap-3">
             <div>
-              <label className="text-xs text-gray-400 block mb-1">E-mail</label>
+              <label className="text-xs text-gray-400 block mb-1">Usuário</label>
               <input
-                type="email"
+                type="text"
                 required
-                placeholder="seu@email.com"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="seu_usuario"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
                 className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E676]"
               />
             </div>
@@ -340,21 +334,9 @@ export default function App() {
               disabled={authLoading}
               className="w-full bg-[#00E676] text-black py-3 rounded-xl text-xs font-extrabold hover:bg-[#00c853] transition-transform active:scale-95 mt-1"
             >
-              {authLoading ? 'Aguarde...' : isRegisterMode ? 'Cadastrar' : 'Entrar'}
+              {authLoading ? 'Aguarde...' : 'Entrar'}
             </button>
           </form>
-
-          <div className="text-center pt-2 border-t border-[#232330]">
-            <button
-              onClick={() => {
-                setIsRegisterMode(!isRegisterMode);
-                setAuthError('');
-              }}
-              className="text-xs text-gray-400 hover:text-white underline"
-            >
-              {isRegisterMode ? 'Já tem uma conta? Entrar' : 'Não tem conta? Cadastrar-se'}
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -369,7 +351,9 @@ export default function App() {
         <div className="flex justify-between items-center bg-[#181820] p-3 rounded-2xl border border-[#232330]">
           <div className="truncate pr-2">
             <span className="text-[10px] text-gray-400 block">Usuário conectado</span>
-            <span className="text-xs font-bold text-gray-200 truncate block">{session.user.email}</span>
+            <span className="text-xs font-bold text-gray-200 truncate block">
+              {session.user.email?.replace('@app.local', '')}
+            </span>
           </div>
           <button
             onClick={handleLogout}
