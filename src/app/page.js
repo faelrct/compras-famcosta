@@ -8,7 +8,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnr
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// SITE KEY DO CLOUDFLARE TURNSTILE (ATUALIZADA)
+// SITE KEY DO CLOUDFLARE TURNSTILE
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEMqBGt8_k0H6FSp';
 
 const SHOP_CATEGORIES = [
@@ -135,10 +135,22 @@ export default function App() {
 
   const fetchFaturaData = async () => {
     if (!session?.user) return;
-    const { data: configData } = await supabase.from('fatura_config').select('*').eq('user_id', session.user.id).single();
+    
+    // .maybeSingle() previne erros caso o usuário ainda não tenha registro na tabela
+    const { data: configData } = await supabase
+      .from('fatura_config')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
     if (configData) setAvailableMoney(Number(configData.available_money) || 0);
 
-    const { data: itemsData } = await supabase.from('fatura_items').select('*').eq('user_id', session.user.id).order('created_at', { ascending: true });
+    const { data: itemsData } = await supabase
+      .from('fatura_items')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: true });
+
     if (itemsData) setFaturaItems(itemsData);
   };
 
@@ -235,28 +247,39 @@ export default function App() {
     }
   };
 
-// --- AÇÕES FATURA (INDIVIDUAL) ---
+  // --- AÇÕES FATURA (INDIVIDUAL) ---
   const handleSaveAvailableMoney = async (e) => {
     e.preventDefault();
     const numericMoney = parseFloat(moneyInput.replace(/\./g, '').replace(',', '.')) || 0;
 
-    const { error } = await supabase
+    // 1. Tenta ATUALIZAR a chave existente do usuário
+    const { data, error: updateError } = await supabase
       .from('fatura_config')
-      .upsert(
-        { 
-          user_id: session.user.id, 
-          available_money: numericMoney 
-        },
-        { onConflict: 'user_id' }
-      );
+      .update({ available_money: numericMoney })
+      .eq('user_id', session.user.id)
+      .select();
 
-    if (error) {
-      alert('Erro ao atualizar dinheiro disponível: ' + error.message);
-    } else {
-      setAvailableMoney(numericMoney);
-      setIsEditMoneyOpen(false);
-      fetchFaturaData();
+    if (updateError) {
+      alert('Erro ao atualizar dinheiro disponível: ' + updateError.message);
+      return;
     }
+
+    // 2. Se não atualizou nada (primeiro acesso do usuário), INSERE uma nova linha
+    if (!data || data.length === 0) {
+      const { error: insertError } = await supabase
+        .from('fatura_config')
+        .insert([{ user_id: session.user.id, available_money: numericMoney }]);
+
+      if (insertError) {
+        alert('Erro ao criar dinheiro disponível: ' + insertError.message);
+        return;
+      }
+    }
+
+    // 3. Sucesso! Atualiza os estados locais da tela
+    setAvailableMoney(numericMoney);
+    setIsEditMoneyOpen(false);
+    fetchFaturaData();
   };
 
   const openAddFaturaItem = (categoryKey) => {
