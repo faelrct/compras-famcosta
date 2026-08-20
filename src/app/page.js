@@ -1,18 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
-// Credenciais Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnrruoxjfrgn.supabase.co';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Cliente secundário para criar usuários sem deslogar o Admin
 const tempSupabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
 
-// SITE KEY DO CLOUDFLARE TURNSTILE
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEMqBGt8_k0H6FSp';
 
 const SHOP_CATEGORIES = [
@@ -35,11 +32,9 @@ const formatBRL = (val) => {
 };
 
 export default function App() {
-  // Autenticação e Sessão
   const [session, setSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
-  // Login por Usuário
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -47,14 +42,11 @@ export default function App() {
   const [captchaToken, setCaptchaToken] = useState('');
   const [adminCaptchaToken, setAdminCaptchaToken] = useState('');
 
-  // Permissões do Usuário Logado
   const [userAllowedTabs, setUserAllowedTabs] = useState(['fatura', 'compras']);
   const isAdmin = session?.user?.email?.toLowerCase().startsWith('admin@');
 
-  // Navegação
   const [activeTab, setActiveTab] = useState('fatura');
 
-  // Compras (Compartilhadas / Universal)
   const [shopItems, setShopItems] = useState([]);
   const [selectedShopCategory, setSelectedShopCategory] = useState('Todos');
   const [isShopModalOpen, setIsShopModalOpen] = useState(false);
@@ -64,7 +56,6 @@ export default function App() {
   const [shopPrice, setShopPrice] = useState('');
   const [shopCategory, setShopCategory] = useState('Comidas');
 
-  // Fatura (Individual por Usuário)
   const [availableMoney, setAvailableMoney] = useState(0);
   const [faturaItems, setFaturaItems] = useState([]);
   const [isEditMoneyOpen, setIsEditMoneyOpen] = useState(false);
@@ -75,7 +66,6 @@ export default function App() {
   const [faturaTotalAmountInput, setFaturaTotalAmountInput] = useState('');
   const [faturaInstallments, setFaturaInstallments] = useState(1);
 
-  // ADMIN - Estados
   const [profilesList, setProfilesList] = useState([]);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
@@ -83,7 +73,8 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [selectedTabsForUser, setSelectedTabsForUser] = useState(['fatura', 'compras']);
 
-  // 1. VERIFICAÇÃO DE SESSÃO DO USUÁRIO
+  const turnstileWidgetId = useRef(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -98,7 +89,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // AUTO-LOGOUT POR INATIVIDADE (15 Minutos)
   useEffect(() => {
     if (!session) return;
 
@@ -123,7 +113,6 @@ export default function App() {
     };
   }, [session]);
 
-  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE PARA O LOGIN INICIAL
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => setCaptchaToken(token);
@@ -131,7 +120,6 @@ export default function App() {
     }
   }, []);
 
-  // RENDERIZAR CAPTCHA DINAMICAMENTE NO MODAL DE ADMIN
   useEffect(() => {
     let timeoutId;
 
@@ -143,16 +131,16 @@ export default function App() {
         if (window.turnstile && container) {
           container.innerHTML = '';
           try {
-            window.turnstile.render('#admin-turnstile-container', {
+            const id = window.turnstile.render('#admin-turnstile-container', {
               sitekey: TURNSTILE_SITE_KEY,
               callback: (token) => setAdminCaptchaToken(token),
               'expired-callback': () => setAdminCaptchaToken(''),
             });
+            turnstileWidgetId.current = id;
           } catch (err) {
             console.error('Erro ao renderizar Turnstile no modal:', err);
           }
         } else {
-          // Se o script do Cloudflare ainda está carregando, tenta novamente em 150ms
           timeoutId = setTimeout(tryRenderCaptcha, 150);
         }
       };
@@ -163,7 +151,6 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [isAdminModalOpen, editingProfile]);
 
-  // 2. BUSCAR DADOS E PERMISSÕES DE ABAS QUANDO LOGADO
   useEffect(() => {
     if (session?.user) {
       fetchUserPermissions();
@@ -238,7 +225,6 @@ export default function App() {
     if (itemsData) setFaturaItems(itemsData);
   };
 
-  // LOGIN
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -273,7 +259,6 @@ export default function App() {
     window.location.reload();
   };
 
-  // --- AÇÕES DO ADMIN (CRUD DE USUÁRIOS) ---
   const openAdminModal = (profile = null) => {
     setAdminCaptchaToken('');
     if (profile) {
@@ -301,8 +286,14 @@ export default function App() {
   const handleSaveUser = async (e) => {
     e.preventDefault();
 
+    const resetCaptcha = () => {
+      setAdminCaptchaToken('');
+      if (turnstileWidgetId.current !== null && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId.current);
+      }
+    };
+
     if (editingProfile) {
-      // Atualizar Permissões do Usuário Existente
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -317,13 +308,11 @@ export default function App() {
         fetchProfiles();
       }
     } else {
-      // Validar Token do Captcha do Admin
       if (!adminCaptchaToken) {
         alert('Por favor, aguarde a verificação do captcha no modal.');
         return;
       }
 
-      // Criar Novo Usuário enviando o token do Captcha
       const formattedEmail = newUsername.includes('@') 
         ? newUsername.trim() 
         : `${newUsername.trim().toLowerCase()}@app.local`;
@@ -336,11 +325,11 @@ export default function App() {
 
       if (error) {
         alert('Erro ao criar conta no Supabase: ' + error.message);
+        resetCaptcha();
         return;
       }
 
       if (data?.user) {
-        // Criar registro na tabela de perfis
         const { error: profileError } = await supabase.from('profiles').insert([
           {
             id: data.user.id,
@@ -349,8 +338,10 @@ export default function App() {
           }
         ]);
 
-        if (profileError) alert('Erro ao salvar permissões do perfil: ' + profileError.message);
-        else {
+        if (profileError) {
+          alert('Erro ao salvar permissões do perfil: ' + profileError.message);
+          resetCaptcha();
+        } else {
           setIsAdminModalOpen(false);
           setAdminCaptchaToken('');
           fetchProfiles();
@@ -367,7 +358,6 @@ export default function App() {
     }
   };
 
-  // --- AÇÕES COMPRAS (UNIVERSAL) ---
   const openShopModal = (item = null) => {
     if (item) {
       setEditingShopItem(item);
@@ -422,7 +412,6 @@ export default function App() {
     }
   };
 
-  // --- AÇÕES FATURA (INDIVIDUAL) ---
   const handleSaveAvailableMoney = async (e) => {
     e.preventDefault();
     const numericMoney = parseFloat(moneyInput.replace(/\./g, '').replace(',', '.')) || 0;
@@ -492,18 +481,15 @@ export default function App() {
     else fetchFaturaData();
   };
 
-  // Cálculos Fatura
   const aReceberTotal = faturaItems.filter(i => i.category === 'a_receber').reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const cartaoMaeTotal = faturaItems.filter(i => i.category === 'mae').reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const meuCartaoTotal = faturaItems.filter(i => i.category === 'meu_cartao').reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const saldoFinal = availableMoney + aReceberTotal - cartaoMaeTotal - meuCartaoTotal;
 
-  // Cálculos Compras
   const shopTotalValue = shopItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const shopTotalItemsCount = shopItems.reduce((acc, item) => acc + item.quantity, 0);
   const filteredShopItems = selectedShopCategory === 'Todos' ? shopItems : shopItems.filter(item => item.category === selectedShopCategory);
 
-  // TELA DE CARREGAMENTO INICIAL
   if (loadingSession) {
     return (
       <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center font-sans">
@@ -514,10 +500,8 @@ export default function App() {
 
   return (
     <>
-      {/* SCRIPT CARREGADO DE FORMA GLOBAL PARA AMBAS AS TELAS */}
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />
 
-      {/* TELA DE LOGIN */}
       {!session ? (
         <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center p-4 font-sans select-none">
           <div className="bg-[#181820] border border-[#232330] w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 shadow-2xl">
@@ -579,11 +563,9 @@ export default function App() {
           </div>
         </div>
       ) : (
-        /* TELA PRINCIPAL DO APP (LOGADO) */
         <div className="min-h-screen bg-[#0D0D12] text-white flex justify-center pb-24 font-sans select-none">
           <div className="w-full max-w-md px-4 pt-4 flex flex-col gap-5">
 
-            {/* Topo com Usuário e Logout */}
             <div className="flex justify-between items-center bg-[#181820] p-3 rounded-2xl border border-[#232330]">
               <div className="truncate pr-2">
                 <span className="text-[10px] text-gray-400 block">Usuário conectado</span>
@@ -599,7 +581,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* ================= ABA: FATURA DO MÊS ================= */}
             {activeTab === 'fatura' && (userAllowedTabs.includes('fatura') || isAdmin) && (
               <>
                 <div>
@@ -655,7 +636,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Seções Fatura */}
                 {[
                   { id: 'mae', title: '💳 Cartão da Mãe', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
                   { id: 'meu_cartao', title: '💙 Meu Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
@@ -702,7 +682,6 @@ export default function App() {
               </>
             )}
 
-            {/* ================= ABA: COMPRAS (COMPARTILHADA) ================= */}
             {activeTab === 'compras' && (userAllowedTabs.includes('compras') || isAdmin) && (
               <>
                 <div className="flex justify-between items-center">
@@ -774,7 +753,6 @@ export default function App() {
               </>
             )}
 
-            {/* ================= ABA EXCLUSIVA: ADMIN ================= */}
             {activeTab === 'admin' && isAdmin && (
               <>
                 <div className="flex justify-between items-center">
@@ -819,7 +797,6 @@ export default function App() {
 
           </div>
 
-          {/* BARRA INFERIOR DE NAVEGAÇÃO DINÂMICA */}
           <div className="fixed bottom-0 left-0 right-0 bg-[#121218]/95 backdrop-blur-md border-t border-[#22222E] flex justify-around items-center py-2.5 z-40 max-w-md mx-auto">
             {(userAllowedTabs.includes('fatura') || isAdmin) && (
               <button onClick={() => setActiveTab('fatura')} className="flex flex-col items-center gap-1 relative px-6 py-1">
@@ -837,7 +814,6 @@ export default function App() {
               </button>
             )}
 
-            {/* ABA ADMIN VISÍVEL APENAS PARA O USUÁRIO ADMIN */}
             {isAdmin && (
               <button onClick={() => setActiveTab('admin')} className="flex flex-col items-center gap-1 relative px-6 py-1">
                 {activeTab === 'admin' && <div className="absolute -top-2.5 w-10 h-1 bg-[#00E676] rounded-full" />}
@@ -847,7 +823,6 @@ export default function App() {
             )}
           </div>
 
-          {/* MODAL ADMIN (CRIAR/EDITAR USUÁRIOS) */}
           {isAdminModalOpen && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -879,7 +854,6 @@ export default function App() {
                         />
                       </div>
 
-                      {/* CONTÊINER PARA O RENDERIZADOR DINÂMICO DO TURNSTILE */}
                       <div className="flex flex-col items-center justify-center my-2 min-h-[65px]">
                         <div id="admin-turnstile-container"></div>
                       </div>
@@ -924,7 +898,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL EDITAR DINHEIRO DISPONÍVEL */}
           {isEditMoneyOpen && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -948,7 +921,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL FATURA */}
           {isFaturaModalOpen && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -992,7 +964,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL COMPRAS */}
           {isShopModalOpen && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
