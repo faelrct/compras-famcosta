@@ -45,6 +45,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
+  const [adminCaptchaToken, setAdminCaptchaToken] = useState('');
 
   // Permissões do Usuário Logado
   const [userAllowedTabs, setUserAllowedTabs] = useState(['fatura', 'compras']);
@@ -122,11 +123,13 @@ export default function App() {
     };
   }, [session]);
 
-  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE
+  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE (LOGIN E ADMIN)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => setCaptchaToken(token);
       window.onTurnstileExpire = () => setCaptchaToken('');
+      window.onAdminTurnstileSuccess = (token) => setAdminCaptchaToken(token);
+      window.onAdminTurnstileExpire = () => setAdminCaptchaToken('');
     }
   }, []);
 
@@ -242,6 +245,7 @@ export default function App() {
 
   // --- AÇÕES DO ADMIN (CRUD DE USUÁRIOS) ---
   const openAdminModal = (profile = null) => {
+    setAdminCaptchaToken('');
     if (profile) {
       setEditingProfile(profile);
       setNewUsername(profile.username);
@@ -283,7 +287,13 @@ export default function App() {
         fetchProfiles();
       }
     } else {
-      // Criar Novo Usuário usando cliente temporário
+      // Validar Token do Captcha do Admin
+      if (!adminCaptchaToken) {
+        alert('Por favor, aguarde a verificação do captcha no modal.');
+        return;
+      }
+
+      // Criar Novo Usuário enviando o token do Captcha
       const formattedEmail = newUsername.includes('@') 
         ? newUsername.trim() 
         : `${newUsername.trim().toLowerCase()}@app.local`;
@@ -291,6 +301,7 @@ export default function App() {
       const { data, error } = await tempSupabase.auth.signUp({
         email: formattedEmail,
         password: newPassword,
+        options: { captchaToken: adminCaptchaToken }
       });
 
       if (error) {
@@ -311,6 +322,7 @@ export default function App() {
         if (profileError) alert('Erro ao salvar permissões do perfil: ' + profileError.message);
         else {
           setIsAdminModalOpen(false);
+          setAdminCaptchaToken('');
           fetchProfiles();
         }
       }
@@ -824,17 +836,29 @@ export default function App() {
               </div>
 
               {!editingProfile && (
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
+                    />
+                  </div>
+
+                  {/* CAPTCHA PARA O MODAL DO ADMIN */}
+                  <div className="flex justify-center my-1 min-h-[65px]">
+                    <div 
+                      className="cf-turnstile" 
+                      data-sitekey={TURNSTILE_SITE_KEY}
+                      data-callback="onAdminTurnstileSuccess"
+                      data-expired-callback="onAdminTurnstileExpire"
+                    ></div>
+                  </div>
+                </>
               )}
 
               <div>
