@@ -110,10 +110,15 @@ export default function App() {
     };
   }, [session]);
 
+  // Configuração segura dos callbacks do Turnstile (compatível com mobile)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => setCaptchaToken(token);
       window.onTurnstileExpire = () => setCaptchaToken('');
+      window.onTurnstileError = () => {
+        setCaptchaToken('');
+        setAuthError('Falha no carregamento da verificação de segurança. Recarregue a página.');
+      };
     }
   }, []);
 
@@ -208,6 +213,12 @@ export default function App() {
 
     setAuthLoading(true);
 
+    // Timeout de segurança de 10 segundos para rede móvel
+    const timeoutId = setTimeout(() => {
+      setAuthLoading(false);
+      setAuthError('A autenticação demorou muito. Verifique sua conexão e tente novamente.');
+    }, 10000);
+
     const formattedEmail = authUsername.includes('@') 
       ? authUsername.trim() 
       : `${authUsername.trim().toLowerCase()}@app.local`;
@@ -222,6 +233,7 @@ export default function App() {
     } catch (err) {
       setAuthError(err.message || 'Erro ao realizar login.');
     } finally {
+      clearTimeout(timeoutId);
       setAuthLoading(false);
     }
   };
@@ -469,13 +481,14 @@ export default function App() {
                   data-sitekey={TURNSTILE_SITE_KEY}
                   data-callback="onTurnstileSuccess"
                   data-expired-callback="onTurnstileExpire"
+                  data-error-callback="onTurnstileError"
                 ></div>
               </div>
 
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#00E676] text-black py-3 rounded-xl text-xs font-extrabold hover:bg-[#00c853] transition-transform active:scale-95 mt-1"
+                className="w-full bg-[#00E676] text-black py-3 rounded-xl text-xs font-extrabold hover:bg-[#00c853] transition-transform active:scale-95 mt-1 disabled:opacity-50"
               >
                 {authLoading ? 'Aguarde...' : 'Entrar'}
               </button>
