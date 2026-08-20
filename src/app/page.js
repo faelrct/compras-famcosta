@@ -389,7 +389,7 @@ export default function App() {
                 placeholder="Digite seu usuário"
                 value={authUsername}
                 onChange={(e) => setAuthUsername(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E676]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
               />
             </div>
 
@@ -401,7 +401,7 @@ export default function App() {
                 placeholder="••••••••"
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E676]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
               />
             </div>
 
@@ -658,7 +658,7 @@ export default function App() {
                 placeholder="0,00"
                 value={moneyInput}
                 onChange={(e) => setMoneyInput(formatCurrencyInput(e.target.value))}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
               />
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={() => setIsEditMoneyOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
@@ -680,7 +680,7 @@ export default function App() {
                 placeholder="Descrição"
                 value={faturaDescription}
                 onChange={(e) => setFaturaDescription(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
               />
               <div className={`grid ${faturaTargetCategory === 'a_receber' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
                 <input
@@ -690,7 +690,7 @@ export default function App() {
                   placeholder="Valor Total (R$)"
                   value={faturaTotalAmountInput}
                   onChange={(e) => setFaturaTotalAmountInput(formatCurrencyInput(e.target.value))}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
                 />
                 {faturaTargetCategory !== 'a_receber' && (
                   <input
@@ -699,7 +699,7 @@ export default function App() {
                     required
                     value={faturaInstallments}
                     onChange={(e) => setFaturaInstallments(e.target.value)}
-                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00E676]"
+                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
                   />
                 )}
               </div>
@@ -723,7 +723,7 @@ export default function App() {
                 placeholder="Nome do Produto"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#FF5722]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
               />
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -732,7 +732,7 @@ export default function App() {
                   required
                   value={shopQuantity}
                   onChange={(e) => setShopQuantity(e.target.value)}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#FF5722]"
+                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
                 />
                 <input
                   type="text"
@@ -740,13 +740,13 @@ export default function App() {
                   placeholder="Valor Unitário (R$)"
                   value={shopPrice}
                   onChange={(e) => setShopPrice(formatCurrencyInput(e.target.value))}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#FF5722]"
+                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
                 />
               </div>
               <select
                 value={shopCategory}
                 onChange={(e) => setShopCategory(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#FF5722]"
+                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
               >
                 {SHOP_CATEGORIES.filter((c) => c.name !== 'Todos').map((c) => (
                   <option key={c.name} value={c.name}>{c.icon} {c.name}</option>
