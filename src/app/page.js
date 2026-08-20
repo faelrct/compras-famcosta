@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnrruoxjfrgn.supabase.co';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-const tempSupabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEMqBGt8_k0H6FSp';
 
@@ -40,10 +38,11 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
-  const [adminCaptchaToken, setAdminCaptchaToken] = useState('');
 
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [userAllowedTabs, setUserAllowedTabs] = useState(['fatura', 'compras']);
-  const isAdmin = session?.user?.email?.toLowerCase().startsWith('admin@');
+  
+  const isAdmin = session?.user?.email?.toLowerCase().startsWith('admin@') || currentUserProfile?.is_admin;
 
   const [activeTab, setActiveTab] = useState('fatura');
 
@@ -70,10 +69,8 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
   const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [selectedTabsForUser, setSelectedTabsForUser] = useState(['fatura', 'compras']);
-
-  const turnstileWidgetId = useRef(null);
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -121,37 +118,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let timeoutId;
-
-    if (isAdminModalOpen && !editingProfile) {
-      setAdminCaptchaToken('');
-
-      const tryRenderCaptcha = () => {
-        const container = document.getElementById('admin-turnstile-container');
-        if (window.turnstile && container) {
-          container.innerHTML = '';
-          try {
-            const id = window.turnstile.render('#admin-turnstile-container', {
-              sitekey: TURNSTILE_SITE_KEY,
-              callback: (token) => setAdminCaptchaToken(token),
-              'expired-callback': () => setAdminCaptchaToken(''),
-            });
-            turnstileWidgetId.current = id;
-          } catch (err) {
-            console.error('Erro ao renderizar Turnstile no modal:', err);
-          }
-        } else {
-          timeoutId = setTimeout(tryRenderCaptcha, 150);
-        }
-      };
-
-      tryRenderCaptcha();
-    }
-
-    return () => clearTimeout(timeoutId);
-  }, [isAdminModalOpen, editingProfile]);
-
-  useEffect(() => {
     if (session?.user) {
       fetchUserPermissions();
       fetchShopItems();
@@ -177,20 +143,23 @@ export default function App() {
         supabase.removeChannel(faturaChannel);
       };
     }
-  }, [session]);
+  }, [session, isAdmin]);
 
   const fetchUserPermissions = async () => {
     if (!session?.user) return;
     const { data } = await supabase
       .from('profiles')
-      .select('allowed_tabs')
+      .select('allowed_tabs, is_admin')
       .eq('id', session.user.id)
       .maybeSingle();
 
-    if (data?.allowed_tabs) {
-      setUserAllowedTabs(data.allowed_tabs);
-      if (!data.allowed_tabs.includes(activeTab) && !isAdmin) {
-        setActiveTab(data.allowed_tabs[0] || 'fatura');
+    if (data) {
+      setCurrentUserProfile(data);
+      if (data.allowed_tabs) {
+        setUserAllowedTabs(data.allowed_tabs);
+        if (!data.allowed_tabs.includes(activeTab) && !data.is_admin) {
+          setActiveTab(data.allowed_tabs[0] || 'fatura');
+        }
       }
     }
   };
@@ -201,7 +170,10 @@ export default function App() {
   };
 
   const fetchShopItems = async () => {
-    const { data } = await supabase.from('items').select('*').order('created_at', { ascending: true });
+    const { data } = await supabase
+      .from('items')
+      .select('*, profiles(username)')
+      .order('created_at', { ascending: true });
     if (data) setShopItems(data);
   };
 
@@ -259,19 +231,12 @@ export default function App() {
     window.location.reload();
   };
 
-  const openAdminModal = (profile = null) => {
-    setAdminCaptchaToken('');
-    if (profile) {
-      setEditingProfile(profile);
-      setNewUsername(profile.username);
-      setNewPassword('');
-      setSelectedTabsForUser(profile.allowed_tabs || ['fatura', 'compras']);
-    } else {
-      setEditingProfile(null);
-      setNewUsername('');
-      setNewPassword('');
-      setSelectedTabsForUser(['fatura', 'compras']);
-    }
+  const openAdminModal = (profile) => {
+    if (!profile) return;
+    setEditingProfile(profile);
+    setNewUsername(profile.username || '');
+    setSelectedTabsForUser(profile.allowed_tabs || ['fatura', 'compras']);
+    setIsUserAdmin(Boolean(profile.is_admin));
     setIsAdminModalOpen(true);
   };
 
@@ -286,66 +251,21 @@ export default function App() {
   const handleSaveUser = async (e) => {
     e.preventDefault();
 
-    const resetCaptcha = () => {
-      setAdminCaptchaToken('');
-      if (turnstileWidgetId.current !== null && window.turnstile) {
-        window.turnstile.reset(turnstileWidgetId.current);
-      }
-    };
-
     if (editingProfile) {
       const { error } = await supabase
         .from('profiles')
         .update({
           username: newUsername,
-          allowed_tabs: selectedTabsForUser
+          allowed_tabs: selectedTabsForUser,
+          is_admin: isUserAdmin
         })
         .eq('id', editingProfile.id);
 
-      if (error) alert('Erro ao atualizar usuário: ' + error.message);
-      else {
+      if (error) {
+        alert('Erro ao atualizar usuário: ' + error.message);
+      } else {
         setIsAdminModalOpen(false);
         fetchProfiles();
-      }
-    } else {
-      if (!adminCaptchaToken) {
-        alert('Por favor, aguarde a verificação do captcha no modal.');
-        return;
-      }
-
-      const formattedEmail = newUsername.includes('@') 
-        ? newUsername.trim() 
-        : `${newUsername.trim().toLowerCase()}@app.local`;
-
-      const { data, error } = await tempSupabase.auth.signUp({
-        email: formattedEmail,
-        password: newPassword,
-        options: { captchaToken: adminCaptchaToken }
-      });
-
-      if (error) {
-        alert('Erro ao criar conta no Supabase: ' + error.message);
-        resetCaptcha();
-        return;
-      }
-
-      if (data?.user) {
-        const { error: profileError } = await supabase.from('profiles').insert([
-          {
-            id: data.user.id,
-            username: newUsername.trim().toLowerCase(),
-            allowed_tabs: selectedTabsForUser
-          }
-        ]);
-
-        if (profileError) {
-          alert('Erro ao salvar permissões do perfil: ' + profileError.message);
-          resetCaptcha();
-        } else {
-          setIsAdminModalOpen(false);
-          setAdminCaptchaToken('');
-          fetchProfiles();
-        }
       }
     }
   };
@@ -727,9 +647,12 @@ export default function App() {
                   ) : (
                     filteredShopItems.map((item) => (
                       <div key={item.id} className="bg-[#1C1C24] p-4 rounded-2xl flex justify-between items-center border-l-4 border-l-[#00E676] border-y border-r border-[#272732]">
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1">
                           <span className="font-semibold text-sm text-gray-100">{item.name}</span>
-                          <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400">
+                            Adicionado por: <strong className="text-gray-300">{item.profiles?.username || '—'}</strong>
+                          </span>
+                          <div className="flex items-center gap-2 mt-0.5">
                             <span className="bg-[#272732] text-xs px-2.5 py-0.5 rounded-full text-gray-300 flex items-center gap-1">
                               {SHOP_CATEGORIES.find((c) => c.name === item.category)?.icon || '📦'} {item.category}
                             </span>
@@ -760,12 +683,6 @@ export default function App() {
                     <p className="text-xs text-gray-400 font-medium">Painel do Administrador 👑</p>
                     <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Gerenciar Usuários</h1>
                   </div>
-                  <button
-                    onClick={() => openAdminModal()}
-                    className="bg-[#00E676] text-black font-extrabold text-xs px-4 py-2.5 rounded-xl hover:bg-[#00c853] transition-transform active:scale-95"
-                  >
-                    + Criar Usuário
-                  </button>
                 </div>
 
                 <div className="flex flex-col gap-3">
@@ -775,7 +692,14 @@ export default function App() {
                     profilesList.map((prof) => (
                       <div key={prof.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
                         <div>
-                          <span className="font-bold text-sm text-white block">{prof.username}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-white">{prof.username}</span>
+                            {prof.is_admin && (
+                              <span className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
+                                ADMIN
+                              </span>
+                            )}
+                          </div>
                           <div className="flex gap-1 mt-1">
                             {(prof.allowed_tabs || []).map((tab) => (
                               <span key={tab} className="bg-[#242432] text-gray-300 text-[10px] px-2 py-0.5 rounded-md font-semibold">
@@ -823,10 +747,10 @@ export default function App() {
             )}
           </div>
 
-          {isAdminModalOpen && (
+          {isAdminModalOpen && editingProfile && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-                <h2 className="text-lg font-bold">{editingProfile ? 'Editar Usuário' : 'Novo Usuário'}</h2>
+                <h2 className="text-lg font-bold">Editar Usuário</h2>
                 <form onSubmit={handleSaveUser} className="flex flex-col gap-3">
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Nome de Usuário</label>
@@ -839,26 +763,6 @@ export default function App() {
                       className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
                     />
                   </div>
-
-                  {!editingProfile && (
-                    <>
-                      <div>
-                        <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                        />
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center my-2 min-h-[65px]">
-                        <div id="admin-turnstile-container"></div>
-                      </div>
-                    </>
-                  )}
 
                   <div>
                     <label className="text-xs text-gray-400 block mb-2">Abas Permitidas</label>
@@ -889,9 +793,24 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-2">Função / Privilégios</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsUserAdmin(!isUserAdmin)}
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 ${
+                        isUserAdmin
+                          ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+                          : 'bg-[#111116] border-[#272732] text-gray-500'
+                      }`}
+                    >
+                      👑 {isUserAdmin ? 'Usuário é Administrador' : 'Tornar Administrador'}
+                    </button>
+                  </div>
+
                   <div className="flex gap-2 mt-2">
                     <button type="button" onClick={() => setIsAdminModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                    <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
+                    <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar Alterações</button>
                   </div>
                 </form>
               </div>
