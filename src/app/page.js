@@ -110,7 +110,6 @@ export default function App() {
     };
   }, [session]);
 
-  // Configuração segura dos callbacks do Turnstile (compatível com mobile)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => setCaptchaToken(token);
@@ -175,60 +174,58 @@ export default function App() {
   };
 
   const fetchShopItems = async () => {
-  // Tenta buscar com o nome do perfil
-  const { data, error } = await supabase
-    .from('items')
-    .select('*, profiles(username)')
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    // Caso o vínculo profiles(username) falhe, busca os itens simples sem travar a tela
-    console.error('Erro ao buscar itens com profiles, buscando itens simples:', error.message);
-    const { data: fallbackData } = await supabase
+    const { data, error } = await supabase
       .from('items')
-      .select('*')
+      .select('*, profiles(username)')
       .order('created_at', { ascending: true });
-    
-    if (fallbackData) setShopItems(fallbackData);
-  } else if (data) {
-    setShopItems(data);
-  }
-};
 
-const handleSaveShopItem = async (e) => {
-  e.preventDefault();
-  const numericPrice = parseFloat(shopPrice.replace(/\./g, '').replace(',', '.')) || 0;
+    if (error) {
+      console.error('Erro ao buscar itens com profiles, buscando itens simples:', error.message);
+      const { data: fallbackData } = await supabase
+        .from('items')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (fallbackData) setShopItems(fallbackData);
+    } else if (data) {
+      setShopItems(data);
+    }
+  };
 
-  let res;
-  if (editingShopItem) {
-    res = await supabase
-      .from('items')
-      .update({ 
-        name: shopName, 
-        quantity: Number(shopQuantity), 
-        price: numericPrice, 
-        category: shopCategory 
-      })
-      .eq('id', editingShopItem.id);
-  } else {
-    res = await supabase
-      .from('items')
-      .insert([{ 
-        name: shopName, 
-        quantity: Number(shopQuantity), 
-        price: numericPrice, 
-        category: shopCategory, 
-        user_id: session.user.id 
-      }]);
-  }
+  const handleSaveShopItem = async (e) => {
+    e.preventDefault();
+    const numericPrice = parseFloat(shopPrice.replace(/\./g, '').replace(',', '.')) || 0;
 
-  if (res.error) {
-    alert('Erro ao salvar no Supabase: ' + res.error.message);
-  } else {
-    setIsShopModalOpen(false);
-    fetchShopItems();
-  }
-};
+    let res;
+    if (editingShopItem) {
+      res = await supabase
+        .from('items')
+        .update({ 
+          name: shopName, 
+          quantity: Number(shopQuantity), 
+          price: numericPrice, 
+          category: shopCategory 
+        })
+        .eq('id', editingShopItem.id);
+    } else {
+      res = await supabase
+        .from('items')
+        .insert([{ 
+          name: shopName, 
+          quantity: Number(shopQuantity), 
+          price: numericPrice, 
+          category: shopCategory, 
+          user_id: session.user.id 
+        }]);
+    }
+
+    if (res.error) {
+      alert('Erro ao salvar no Supabase: ' + res.error.message);
+    } else {
+      setIsShopModalOpen(false);
+      fetchShopItems();
+    }
+  };
 
   const fetchFaturaData = async () => {
     if (!session?.user) return;
@@ -261,7 +258,6 @@ const handleSaveShopItem = async (e) => {
 
     setAuthLoading(true);
 
-    // Timeout de segurança de 10 segundos para rede móvel
     const timeoutId = setTimeout(() => {
       setAuthLoading(false);
       setAuthError('A autenticação demorou muito. Verifique sua conexão e tente novamente.');
@@ -353,29 +349,6 @@ const handleSaveShopItem = async (e) => {
       setShopCategory('Comidas');
     }
     setIsShopModalOpen(true);
-  };
-
-  const handleSaveShopItem = async (e) => {
-    e.preventDefault();
-    const numericPrice = parseFloat(shopPrice.replace(/\./g, '').replace(',', '.')) || 0;
-
-    let res;
-    if (editingShopItem) {
-      res = await supabase
-        .from('items')
-        .update({ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory })
-        .eq('id', editingShopItem.id);
-    } else {
-      res = await supabase
-        .from('items')
-        .insert([{ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory, user_id: session.user.id }]);
-    }
-
-    if (res.error) alert('Erro ao salvar item: ' + res.error.message);
-    else {
-      setIsShopModalOpen(false);
-      fetchShopItems();
-    }
   };
 
   const handleDeleteShopItem = async (id) => {
