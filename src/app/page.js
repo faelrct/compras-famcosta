@@ -492,11 +492,11 @@ export default function App() {
                 </div>
                 <hr className="border-[#21352A] my-0.5" />
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💳 Cartão da mãe</span>
+                  <span className="text-gray-300">💳 Cartão de Crédito</span>
                   <span className="font-bold text-[#FF4081]">- R$ {formatBRL(cartaoMaeTotal)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💙 Meu cartão</span>
+                  <span className="text-gray-300">👤 Meu cartão</span>
                   <span className="font-bold text-[#00B0FF]">- R$ {formatBRL(meuCartaoTotal)}</span>
                 </div>
               </div>
@@ -511,8 +511,8 @@ export default function App() {
 
             {/* Seções Fatura */}
             {[
-              { id: 'mae', title: '💳 Cartão da Mãe', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
-              { id: 'meu_cartao', title: '💙 Meu Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
+              { id: 'mae', title: '💳 Cartão de Crédito', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
+              { id: 'meu_cartao', title: '👤 Meu cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
               { id: 'a_receber', title: '💰 A Receber', color: '#00E676', bg: '#1B2D24', border: '#214332', total: aReceberTotal },
             ].map(sec => (
               <div key={sec.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex flex-col gap-3">
