@@ -196,7 +196,7 @@ export default function App() {
       if (error) throw error;
     } catch (err) {
       setAuthError(err.message || 'Erro ao realizar login.');
-    } fontally {
+    } finally {
       setAuthLoading(false);
     }
   };
