@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Script from 'next/script';
 import { createClient } from '@supabase/supabase-js';
 
 // Credenciais Supabase
@@ -82,35 +81,9 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // AUTO-LOGOUT POR INATIVIDADE (15 Minutos)
+  // CARREGAR CLOUDFLARE TURNSTILE WIDGET E REGISTRAR CALLBACKS
   useEffect(() => {
-    if (!session) return;
-
-    const INACTIVITY_LIMIT = 15 * 60 * 1000; 
-    let timer;
-
-    const resetTimer = () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
-        await supabase.auth.signOut();
-        alert('Sua sessão expirou por inatividade. Faça login novamente.');
-      }, INACTIVITY_LIMIT);
-    };
-
-    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
-
-    activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
-    resetTimer();
-
-    return () => {
-      clearTimeout(timer);
-      activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
-    };
-  }, [session]);
-
-  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (!session && typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => {
         setCaptchaToken(token);
       };
@@ -118,8 +91,18 @@ export default function App() {
       window.onTurnstileExpire = () => {
         setCaptchaToken('');
       };
+
+      const scriptId = 'turnstile-script';
+      if (!document.getElementById(scriptId)) {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+        script.async = true;
+        script.defer = true;
+        document.body.appendChild(script);
+      }
     }
-  }, []);
+  }, [session]);
 
   // 2. BUSCAR DADOS QUANDO LOGADO
   useEffect(() => {
@@ -196,7 +179,7 @@ export default function App() {
       if (error) throw error;
     } catch (err) {
       setAuthError(err.message || 'Erro ao realizar login.');
-    } fontally {
+    } finally {
       setAuthLoading(false);
     }
   };
@@ -404,12 +387,8 @@ export default function App() {
               />
             </div>
 
-            {/* Cloudflare Turnstile CAPTCHA Widget Container com Carregamento Otimizado */}
-            <Script 
-              src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
-              strategy="afterInteractive" 
-            />
-            <div className="flex justify-center my-1 min-h-[65px]">
+            {/* Cloudflare Turnstile CAPTCHA Widget Container */}
+            <div className="flex justify-center my-1">
               <div 
                 className="cf-turnstile" 
                 data-sitekey={TURNSTILE_SITE_KEY}
