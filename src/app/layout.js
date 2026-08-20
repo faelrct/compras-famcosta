@@ -8,8 +8,8 @@ export const viewport = {
 };
 
 export const metadata = {
-  title: 'Lista de Compras',
-  description: 'Aplicativo de lista de compras',
+  title: 'Financeiro | Famcosta',
+  description: 'Aplicativo Familiar de Controle Financeiro',
 };
 
 export default function RootLayout({ children }) {
