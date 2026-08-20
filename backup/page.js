@@ -9,9 +9,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://abopaplifnr
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFib3BhcGxpZm5ycnVveGpmcmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMTU1MDksImV4cCI6MjEwMTY5MTUwOX0.LPw0TfRUhpbm7VwmfdJTIhvfDbFM6SDO8TONh-l19qA';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Cliente secundário para criar usuários sem deslogar o Admin
-const tempSupabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-
 // SITE KEY DO CLOUDFLARE TURNSTILE
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEMqBGt8_k0H6FSp';
 
@@ -46,10 +43,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
 
-  // Permissões do Usuário Logado
-  const [userAllowedTabs, setUserAllowedTabs] = useState(['fatura', 'compras']);
-  const isAdmin = session?.user?.email?.toLowerCase().startsWith('admin@');
-
   // Navegação
   const [activeTab, setActiveTab] = useState('fatura');
 
@@ -73,14 +66,6 @@ export default function App() {
   const [faturaDescription, setFaturaDescription] = useState('');
   const [faturaTotalAmountInput, setFaturaTotalAmountInput] = useState('');
   const [faturaInstallments, setFaturaInstallments] = useState(1);
-
-  // ADMIN - Estados
-  const [profilesList, setProfilesList] = useState([]);
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [editingProfile, setEditingProfile] = useState(null);
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [selectedTabsForUser, setSelectedTabsForUser] = useState(['fatura', 'compras']);
 
   // 1. VERIFICAÇÃO DE SESSÃO DO USUÁRIO
   useEffect(() => {
@@ -113,6 +98,7 @@ export default function App() {
     };
 
     const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+
     activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
     resetTimer();
 
@@ -125,21 +111,21 @@ export default function App() {
   // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.onTurnstileSuccess = (token) => setCaptchaToken(token);
-      window.onTurnstileExpire = () => setCaptchaToken('');
+      window.onTurnstileSuccess = (token) => {
+        setCaptchaToken(token);
+      };
+
+      window.onTurnstileExpire = () => {
+        setCaptchaToken('');
+      };
     }
   }, []);
 
-  // 2. BUSCAR DADOS E PERMISSÕES DE ABAS QUANDO LOGADO
+  // 2. BUSCAR DADOS QUANDO LOGADO
   useEffect(() => {
     if (session?.user) {
-      fetchUserPermissions();
       fetchShopItems();
       fetchFaturaData();
-
-      if (isAdmin) {
-        fetchProfiles();
-      }
 
       const shopChannel = supabase
         .channel('realtime-items')
@@ -159,27 +145,6 @@ export default function App() {
     }
   }, [session]);
 
-  const fetchUserPermissions = async () => {
-    if (!session?.user) return;
-    const { data } = await supabase
-      .from('profiles')
-      .select('allowed_tabs')
-      .eq('id', session.user.id)
-      .maybeSingle();
-
-    if (data?.allowed_tabs) {
-      setUserAllowedTabs(data.allowed_tabs);
-      if (!data.allowed_tabs.includes(activeTab) && !isAdmin) {
-        setActiveTab(data.allowed_tabs[0] || 'fatura');
-      }
-    }
-  };
-
-  const fetchProfiles = async () => {
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
-    if (data) setProfilesList(data);
-  };
-
   const fetchShopItems = async () => {
     const { data } = await supabase.from('items').select('*').order('created_at', { ascending: true });
     if (data) setShopItems(data);
@@ -188,6 +153,7 @@ export default function App() {
   const fetchFaturaData = async () => {
     if (!session?.user) return;
     
+    // .maybeSingle() previne erros caso o usuário ainda não tenha registro na tabela
     const { data: configData } = await supabase
       .from('fatura_config')
       .select('*')
@@ -205,7 +171,7 @@ export default function App() {
     if (itemsData) setFaturaItems(itemsData);
   };
 
-  // LOGIN
+  // --- LOGIN POR USUÁRIO ---
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -238,91 +204,6 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.reload();
-  };
-
-  // --- AÇÕES DO ADMIN (CRUD DE USUÁRIOS) ---
-  const openAdminModal = (profile = null) => {
-    if (profile) {
-      setEditingProfile(profile);
-      setNewUsername(profile.username);
-      setNewPassword('');
-      setSelectedTabsForUser(profile.allowed_tabs || ['fatura', 'compras']);
-    } else {
-      setEditingProfile(null);
-      setNewUsername('');
-      setNewPassword('');
-      setSelectedTabsForUser(['fatura', 'compras']);
-    }
-    setIsAdminModalOpen(true);
-  };
-
-  const handleToggleTabPermission = (tabKey) => {
-    if (selectedTabsForUser.includes(tabKey)) {
-      setSelectedTabsForUser(selectedTabsForUser.filter((t) => t !== tabKey));
-    } else {
-      setSelectedTabsForUser([...selectedTabsForUser, tabKey]);
-    }
-  };
-
-  const handleSaveUser = async (e) => {
-    e.preventDefault();
-
-    if (editingProfile) {
-      // Atualizar Permissões do Usuário Existente
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          username: newUsername,
-          allowed_tabs: selectedTabsForUser
-        })
-        .eq('id', editingProfile.id);
-
-      if (error) alert('Erro ao atualizar usuário: ' + error.message);
-      else {
-        setIsAdminModalOpen(false);
-        fetchProfiles();
-      }
-    } else {
-      // Criar Novo Usuário usando cliente temporário
-      const formattedEmail = newUsername.includes('@') 
-        ? newUsername.trim() 
-        : `${newUsername.trim().toLowerCase()}@app.local`;
-
-      const { data, error } = await tempSupabase.auth.signUp({
-        email: formattedEmail,
-        password: newPassword,
-      });
-
-      if (error) {
-        alert('Erro ao criar conta no Supabase: ' + error.message);
-        return;
-      }
-
-      if (data?.user) {
-        // Criar registro na tabela de perfis
-        const { error: profileError } = await supabase.from('profiles').insert([
-          {
-            id: data.user.id,
-            username: newUsername.trim().toLowerCase(),
-            allowed_tabs: selectedTabsForUser
-          }
-        ]);
-
-        if (profileError) alert('Erro ao salvar permissões do perfil: ' + profileError.message);
-        else {
-          setIsAdminModalOpen(false);
-          fetchProfiles();
-        }
-      }
-    }
-  };
-
-  const handleDeleteUser = async (profileId) => {
-    if (confirm('Tem certeza que deseja excluir o perfil deste usuário?')) {
-      const { error } = await supabase.from('profiles').delete().eq('id', profileId);
-      if (error) alert('Erro ao apagar perfil: ' + error.message);
-      else fetchProfiles();
-    }
   };
 
   // --- AÇÕES COMPRAS (UNIVERSAL) ---
@@ -359,8 +240,9 @@ export default function App() {
         .insert([{ name: shopName, quantity: Number(shopQuantity), price: numericPrice, category: shopCategory, user_id: session.user.id }]);
     }
 
-    if (res.error) alert('Erro ao salvar item: ' + res.error.message);
-    else {
+    if (res.error) {
+      alert('Erro ao salvar item na lista de compras: ' + res.error.message);
+    } else {
       setIsShopModalOpen(false);
       fetchShopItems();
     }
@@ -368,8 +250,11 @@ export default function App() {
 
   const handleDeleteShopItem = async (id) => {
     const { error } = await supabase.from('items').delete().eq('id', id);
-    if (error) alert('Erro ao excluir item: ' + error.message);
-    else fetchShopItems();
+    if (error) {
+      alert('Erro ao excluir item das compras: ' + error.message);
+    } else {
+      fetchShopItems();
+    }
   };
 
   const handleClearShopList = async () => {
@@ -385,6 +270,7 @@ export default function App() {
     e.preventDefault();
     const numericMoney = parseFloat(moneyInput.replace(/\./g, '').replace(',', '.')) || 0;
 
+    // 1. Tenta ATUALIZAR a chave existente do usuário
     const { data, error: updateError } = await supabase
       .from('fatura_config')
       .update({ available_money: numericMoney })
@@ -396,6 +282,7 @@ export default function App() {
       return;
     }
 
+    // 2. Se não atualizou nada (primeiro acesso do usuário), INSERE uma nova linha
     if (!data || data.length === 0) {
       const { error: insertError } = await supabase
         .from('fatura_config')
@@ -407,6 +294,7 @@ export default function App() {
       }
     }
 
+    // 3. Sucesso! Atualiza os estados locais da tela
     setAvailableMoney(numericMoney);
     setIsEditMoneyOpen(false);
     fetchFaturaData();
@@ -437,8 +325,9 @@ export default function App() {
       }
     ]);
 
-    if (error) alert('Erro ao salvar item na fatura: ' + error.message);
-    else {
+    if (error) {
+      alert('Erro ao salvar item na fatura: ' + error.message);
+    } else {
       setIsFaturaModalOpen(false);
       fetchFaturaData();
     }
@@ -446,15 +335,18 @@ export default function App() {
 
   const handleDeleteFaturaItem = async (id) => {
     const { error } = await supabase.from('fatura_items').delete().eq('id', id);
-    if (error) alert('Erro ao excluir item da fatura: ' + error.message);
-    else fetchFaturaData();
+    if (error) {
+      alert('Erro ao excluir item da fatura: ' + error.message);
+    } else {
+      fetchFaturaData();
+    }
   };
 
   // Cálculos Fatura
   const aReceberTotal = faturaItems.filter(i => i.category === 'a_receber').reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const cartaoMaeTotal = faturaItems.filter(i => i.category === 'mae').reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const contasTotal = faturaItems.filter(i => i.category === 'mae').reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const meuCartaoTotal = faturaItems.filter(i => i.category === 'meu_cartao').reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const saldoFinal = availableMoney + aReceberTotal - cartaoMaeTotal - meuCartaoTotal;
+  const saldoFinal = availableMoney + aReceberTotal - contasTotal - meuCartaoTotal;
 
   // Cálculos Compras
   const shopTotalValue = shopItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -470,7 +362,7 @@ export default function App() {
     );
   }
 
-  // TELA DE LOGIN
+  // TELA DE LOGIN (POR USUÁRIO)
   if (!session) {
     return (
       <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center p-4 font-sans select-none">
@@ -513,7 +405,11 @@ export default function App() {
               />
             </div>
 
-            <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />
+            {/* Cloudflare Turnstile CAPTCHA Widget Container com Carregamento Otimizado */}
+            <Script 
+              src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
+              strategy="afterInteractive" 
+            />
             <div className="flex justify-center my-1 min-h-[65px]">
               <div 
                 className="cf-turnstile" 
@@ -546,7 +442,7 @@ export default function App() {
           <div className="truncate pr-2">
             <span className="text-[10px] text-gray-400 block">Usuário conectado</span>
             <span className="text-xs font-bold text-gray-200 truncate block">
-              {session.user.email?.replace('@app.local', '')} {isAdmin ? '👑 (Admin)' : ''}
+              {session.user.email?.replace('@app.local', '')}
             </span>
           </div>
           <button
@@ -558,7 +454,7 @@ export default function App() {
         </div>
 
         {/* ================= ABA: FATURA DO MÊS ================= */}
-        {activeTab === 'fatura' && (userAllowedTabs.includes('fatura') || isAdmin) && (
+        {activeTab === 'fatura' && (
           <>
             <div>
               <p className="text-xs text-gray-400 font-medium">Sua fatura privada 📊</p>
@@ -596,11 +492,11 @@ export default function App() {
                 </div>
                 <hr className="border-[#21352A] my-0.5" />
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💳 Cartão da mãe</span>
-                  <span className="font-bold text-[#FF4081]">- R$ {formatBRL(cartaoMaeTotal)}</span>
+                  <span className="text-gray-300">👤 Contas</span>
+                  <span className="font-bold text-[#FF4081]">- R$ {formatBRL(contasTotal)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💙 Meu cartão</span>
+                  <span className="text-gray-300">💳 Cartão</span>
                   <span className="font-bold text-[#00B0FF]">- R$ {formatBRL(meuCartaoTotal)}</span>
                 </div>
               </div>
@@ -615,8 +511,8 @@ export default function App() {
 
             {/* Seções Fatura */}
             {[
-              { id: 'mae', title: '💳 Cartão da Mãe', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
-              { id: 'meu_cartao', title: '💙 Meu Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
+              { id: 'mae', title: '👤 Contas', color: '#f9ff40', bg: '#2A1D28', border: '#3E2337', total: contasTotal },
+              { id: 'meu_cartao', title: '💳 Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
               { id: 'a_receber', title: '💰 A Receber', color: '#00E676', bg: '#1B2D24', border: '#214332', total: aReceberTotal },
             ].map(sec => (
               <div key={sec.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex flex-col gap-3">
@@ -661,7 +557,7 @@ export default function App() {
         )}
 
         {/* ================= ABA: COMPRAS (COMPARTILHADA) ================= */}
-        {activeTab === 'compras' && (userAllowedTabs.includes('compras') || isAdmin) && (
+        {activeTab === 'compras' && (
           <>
             <div className="flex justify-between items-center">
               <div>
@@ -732,150 +628,24 @@ export default function App() {
           </>
         )}
 
-        {/* ================= ABA EXCLUSIVA: ADMIN ================= */}
-        {activeTab === 'admin' && isAdmin && (
-          <>
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-xs text-gray-400 font-medium">Painel do Administrador 👑</p>
-                <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Gerenciar Usuários</h1>
-              </div>
-              <button
-                onClick={() => openAdminModal()}
-                className="bg-[#00E676] text-black font-extrabold text-xs px-4 py-2.5 rounded-xl hover:bg-[#00c853] transition-transform active:scale-95"
-              >
-                + Criar Usuário
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {profilesList.length === 0 ? (
-                <div className="text-center text-gray-500 py-10 text-sm">Nenhum perfil cadastrado.</div>
-              ) : (
-                profilesList.map((prof) => (
-                  <div key={prof.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-sm text-white block">{prof.username}</span>
-                      <div className="flex gap-1 mt-1">
-                        {(prof.allowed_tabs || []).map((tab) => (
-                          <span key={tab} className="bg-[#242432] text-gray-300 text-[10px] px-2 py-0.5 rounded-md font-semibold">
-                            {tab === 'fatura' ? '📊 Fatura' : tab === 'compras' ? '🛒 Compras' : tab}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => openAdminModal(prof)} className="w-8 h-8 rounded-full bg-[#272732] text-yellow-400 flex items-center justify-center text-xs">✏️</button>
-                      <button onClick={() => handleDeleteUser(prof.id)} className="w-8 h-8 rounded-full bg-[#321C24] text-red-400 flex items-center justify-center text-xs">✕</button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
       </div>
 
-      {/* BARRA INFERIOR DE NAVEGAÇÃO DINÂMICA */}
+      {/* BARRA INFERIOR DE NAVEGAÇÃO */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#121218]/95 backdrop-blur-md border-t border-[#22222E] flex justify-around items-center py-2.5 z-40 max-w-md mx-auto">
-        {(userAllowedTabs.includes('fatura') || isAdmin) && (
-          <button onClick={() => setActiveTab('fatura')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'fatura' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FFB74D] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'fatura' ? 'opacity-100' : 'opacity-40'}`}>📊</span>
-            <span className={`text-xs font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>Fatura</span>
-          </button>
-        )}
+        <button onClick={() => setActiveTab('fatura')} className="flex flex-col items-center gap-1 relative px-8 py-1">
+          {activeTab === 'fatura' && <div className="absolute -top-2.5 w-12 h-1 bg-[#FFB74D] rounded-full" />}
+          <span className={`text-xl ${activeTab === 'fatura' ? 'opacity-100' : 'opacity-40'}`}>📊</span>
+          <span className={`text-xs font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>Fatura</span>
+        </button>
 
-        {(userAllowedTabs.includes('compras') || isAdmin) && (
-          <button onClick={() => setActiveTab('compras')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'compras' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FF5722] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'compras' ? 'opacity-100' : 'opacity-40'}`}>🛒</span>
-            <span className={`text-xs font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>Compras</span>
-          </button>
-        )}
-
-        {/* ABA ADMIN VISÍVEL APENAS PARA O USUÁRIO ADMIN */}
-        {isAdmin && (
-          <button onClick={() => setActiveTab('admin')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'admin' && <div className="absolute -top-2.5 w-10 h-1 bg-[#00E676] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'admin' ? 'opacity-100' : 'opacity-40'}`}>👑</span>
-            <span className={`text-xs font-bold ${activeTab === 'admin' ? 'text-[#00E676]' : 'text-gray-500'}`}>Admin</span>
-          </button>
-        )}
+        <button onClick={() => setActiveTab('compras')} className="flex flex-col items-center gap-1 relative px-8 py-1">
+          {activeTab === 'compras' && <div className="absolute -top-2.5 w-12 h-1 bg-[#FF5722] rounded-full" />}
+          <span className={`text-xl ${activeTab === 'compras' ? 'opacity-100' : 'opacity-40'}`}>🛒</span>
+          <span className={`text-xs font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>Compras</span>
+        </button>
       </div>
 
-      {/* MODAL ADMIN (CRIAR/EDITAR USUÁRIOS) */}
-      {isAdminModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-            <h2 className="text-lg font-bold">{editingProfile ? 'Editar Usuário' : 'Novo Usuário'}</h2>
-            <form onSubmit={handleSaveUser} className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Nome de Usuário</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: joao"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                />
-              </div>
-
-              {!editingProfile && (
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs text-gray-400 block mb-2">Abas Permitidas</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTabPermission('fatura')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
-                      selectedTabsForUser.includes('fatura')
-                        ? 'bg-[#FFB74D]/20 border-[#FFB74D] text-[#FFB74D]'
-                        : 'bg-[#111116] border-[#272732] text-gray-500'
-                    }`}
-                  >
-                    📊 Fatura
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTabPermission('compras')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
-                      selectedTabsForUser.includes('compras')
-                        ? 'bg-[#FF5722]/20 border-[#FF5722] text-[#FF5722]'
-                        : 'bg-[#111116] border-[#272732] text-gray-500'
-                    }`}
-                  >
-                    🛒 Compras
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setIsAdminModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EDITAR DINHEIRO DISPONÍVEL */}
+      {/* MODAIS (DINHEIRO, FATURA, COMPRAS) */}
       {isEditMoneyOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -899,7 +669,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL FATURA */}
       {isFaturaModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
@@ -943,7 +712,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL COMPRAS */}
       {isShopModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
