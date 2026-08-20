@@ -175,12 +175,60 @@ export default function App() {
   };
 
   const fetchShopItems = async () => {
-    const { data } = await supabase
+  // Tenta buscar com o nome do perfil
+  const { data, error } = await supabase
+    .from('items')
+    .select('*, profiles(username)')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    // Caso o vínculo profiles(username) falhe, busca os itens simples sem travar a tela
+    console.error('Erro ao buscar itens com profiles, buscando itens simples:', error.message);
+    const { data: fallbackData } = await supabase
       .from('items')
-      .select('*, profiles(username)')
+      .select('*')
       .order('created_at', { ascending: true });
-    if (data) setShopItems(data);
-  };
+    
+    if (fallbackData) setShopItems(fallbackData);
+  } else if (data) {
+    setShopItems(data);
+  }
+};
+
+const handleSaveShopItem = async (e) => {
+  e.preventDefault();
+  const numericPrice = parseFloat(shopPrice.replace(/\./g, '').replace(',', '.')) || 0;
+
+  let res;
+  if (editingShopItem) {
+    res = await supabase
+      .from('items')
+      .update({ 
+        name: shopName, 
+        quantity: Number(shopQuantity), 
+        price: numericPrice, 
+        category: shopCategory 
+      })
+      .eq('id', editingShopItem.id);
+  } else {
+    res = await supabase
+      .from('items')
+      .insert([{ 
+        name: shopName, 
+        quantity: Number(shopQuantity), 
+        price: numericPrice, 
+        category: shopCategory, 
+        user_id: session.user.id 
+      }]);
+  }
+
+  if (res.error) {
+    alert('Erro ao salvar no Supabase: ' + res.error.message);
+  } else {
+    setIsShopModalOpen(false);
+    fetchShopItems();
+  }
+};
 
   const fetchFaturaData = async () => {
     if (!session?.user) return;
