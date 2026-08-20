@@ -133,9 +133,12 @@ export default function App() {
 
   // RENDERIZAR CAPTCHA DINAMICAMENTE NO MODAL DE ADMIN
   useEffect(() => {
+    let timeoutId;
+
     if (isAdminModalOpen && !editingProfile) {
       setAdminCaptchaToken('');
-      const timer = setTimeout(() => {
+
+      const tryRenderCaptcha = () => {
         const container = document.getElementById('admin-turnstile-container');
         if (window.turnstile && container) {
           container.innerHTML = '';
@@ -146,13 +149,18 @@ export default function App() {
               'expired-callback': () => setAdminCaptchaToken(''),
             });
           } catch (err) {
-            console.error('Erro ao renderizar Turnstile:', err);
+            console.error('Erro ao renderizar Turnstile no modal:', err);
           }
+        } else {
+          // Se o script do Cloudflare ainda está carregando, tenta novamente em 150ms
+          timeoutId = setTimeout(tryRenderCaptcha, 150);
         }
-      }, 150);
+      };
 
-      return () => clearTimeout(timer);
+      tryRenderCaptcha();
     }
+
+    return () => clearTimeout(timeoutId);
   }, [isAdminModalOpen, editingProfile]);
 
   // 2. BUSCAR DADOS E PERMISSÕES DE ABAS QUANDO LOGADO
@@ -504,534 +512,538 @@ export default function App() {
     );
   }
 
-  // TELA DE LOGIN
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center p-4 font-sans select-none">
-        <div className="bg-[#181820] border border-[#232330] w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 shadow-2xl">
-          <div className="text-center">
-            <h1 className="text-2xl font-black text-white">Acessar Sistema</h1>
-            <p className="text-xs text-gray-400 mt-1">
-              Informe seu usuário e senha para continuar
-            </p>
-          </div>
-
-          {authError && (
-            <div className="bg-red-950/50 border border-red-500/50 text-red-300 text-xs p-3 rounded-xl text-center font-medium">
-              {authError}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="flex flex-col gap-3">
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Usuário</label>
-              <input
-                type="text"
-                required
-                placeholder="Digite seu usuário"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Senha</label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
-              />
-            </div>
-
-            <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />
-            <div className="flex justify-center my-1 min-h-[65px]">
-              <div 
-                className="cf-turnstile" 
-                data-sitekey={TURNSTILE_SITE_KEY}
-                data-callback="onTurnstileSuccess"
-                data-expired-callback="onTurnstileExpire"
-              ></div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full bg-[#00E676] text-black py-3 rounded-xl text-xs font-extrabold hover:bg-[#00c853] transition-transform active:scale-95 mt-1"
-            >
-              {authLoading ? 'Aguarde...' : 'Entrar'}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  // TELA PRINCIPAL DO APP (LOGADO)
   return (
-    <div className="min-h-screen bg-[#0D0D12] text-white flex justify-center pb-24 font-sans select-none">
-      <div className="w-full max-w-md px-4 pt-4 flex flex-col gap-5">
+    <>
+      {/* SCRIPT CARREGADO DE FORMA GLOBAL PARA AMBAS AS TELAS */}
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />
 
-        {/* Topo com Usuário e Logout */}
-        <div className="flex justify-between items-center bg-[#181820] p-3 rounded-2xl border border-[#232330]">
-          <div className="truncate pr-2">
-            <span className="text-[10px] text-gray-400 block">Usuário conectado</span>
-            <span className="text-xs font-bold text-gray-200 truncate block">
-              {session.user.email?.replace('@app.local', '')} {isAdmin ? '👑 (Admin)' : ''}
-            </span>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="bg-[#2B1B20] text-red-400 border border-[#42222E] text-xs font-bold px-3 py-1.5 rounded-xl hover:bg-red-900/30 transition-transform active:scale-95"
-          >
-            Sair
-          </button>
-        </div>
-
-        {/* ================= ABA: FATURA DO MÊS ================= */}
-        {activeTab === 'fatura' && (userAllowedTabs.includes('fatura') || isAdmin) && (
-          <>
-            <div>
-              <p className="text-xs text-gray-400 font-medium">Sua fatura privada 📊</p>
-              <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Fatura do Mês</h1>
+      {/* TELA DE LOGIN */}
+      {!session ? (
+        <div className="min-h-screen bg-[#0D0D12] text-white flex items-center justify-center p-4 font-sans select-none">
+          <div className="bg-[#181820] border border-[#232330] w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 shadow-2xl">
+            <div className="text-center">
+              <h1 className="text-2xl font-black text-white">Acessar Sistema</h1>
+              <p className="text-xs text-gray-400 mt-1">
+                Informe seu usuário e senha para continuar
+              </p>
             </div>
 
-            <div className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
+            {authError && (
+              <div className="bg-red-950/50 border border-red-500/50 text-red-300 text-xs p-3 rounded-xl text-center font-medium">
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="flex flex-col gap-3">
               <div>
-                <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold block mb-1">
-                  MEU DINHEIRO DISPONÍVEL
+                <label className="text-xs text-gray-400 block mb-1">Usuário</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Digite seu usuário"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Senha</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-[#00E676]"
+                />
+              </div>
+
+              <div className="flex justify-center my-1 min-h-[65px]">
+                <div 
+                  className="cf-turnstile" 
+                  data-sitekey={TURNSTILE_SITE_KEY}
+                  data-callback="onTurnstileSuccess"
+                  data-expired-callback="onTurnstileExpire"
+                ></div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-[#00E676] text-black py-3 rounded-xl text-xs font-extrabold hover:bg-[#00c853] transition-transform active:scale-95 mt-1"
+              >
+                {authLoading ? 'Aguarde...' : 'Entrar'}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        /* TELA PRINCIPAL DO APP (LOGADO) */
+        <div className="min-h-screen bg-[#0D0D12] text-white flex justify-center pb-24 font-sans select-none">
+          <div className="w-full max-w-md px-4 pt-4 flex flex-col gap-5">
+
+            {/* Topo com Usuário e Logout */}
+            <div className="flex justify-between items-center bg-[#181820] p-3 rounded-2xl border border-[#232330]">
+              <div className="truncate pr-2">
+                <span className="text-[10px] text-gray-400 block">Usuário conectado</span>
+                <span className="text-xs font-bold text-gray-200 truncate block">
+                  {session.user.email?.replace('@app.local', '')} {isAdmin ? '👑 (Admin)' : ''}
                 </span>
-                <span className="text-2xl font-black text-[#00E676]">R$ {formatBRL(availableMoney)}</span>
               </div>
               <button
-                onClick={() => {
-                  setMoneyInput(formatBRL(availableMoney));
-                  setIsEditMoneyOpen(true);
-                }}
-                className="bg-[#242432] hover:bg-[#2e2e3f] text-xs font-semibold px-3 py-1.5 rounded-full text-gray-300 border border-[#323246]"
+                onClick={handleLogout}
+                className="bg-[#2B1B20] text-red-400 border border-[#42222E] text-xs font-bold px-3 py-1.5 rounded-xl hover:bg-red-900/30 transition-transform active:scale-95"
               >
-                ✏️ Editar
+                Sair
               </button>
             </div>
 
-            <div className="bg-[#141A18] p-4 rounded-2xl border border-[#1C382B] flex flex-col gap-3">
-              <h2 className="text-sm font-bold text-gray-200">Resumo do mês</h2>
-              <div className="flex flex-col gap-2.5 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💰 Dinheiro disponível</span>
-                  <span className="font-bold text-[#00E676]">R$ {formatBRL(availableMoney)}</span>
+            {/* ================= ABA: FATURA DO MÊS ================= */}
+            {activeTab === 'fatura' && (userAllowedTabs.includes('fatura') || isAdmin) && (
+              <>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium">Sua fatura privada 📊</p>
+                  <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Fatura do Mês</h1>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">📬 A receber</span>
-                  <span className="font-bold text-[#00E676]">+ R$ {formatBRL(aReceberTotal)}</span>
-                </div>
-                <hr className="border-[#21352A] my-0.5" />
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💳 Cartão da mãe</span>
-                  <span className="font-bold text-[#FF4081]">- R$ {formatBRL(cartaoMaeTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">💙 Meu cartão</span>
-                  <span className="font-bold text-[#00B0FF]">- R$ {formatBRL(meuCartaoTotal)}</span>
-                </div>
-              </div>
-              <hr className="border-[#21352A] my-0.5" />
-              <div className="flex justify-between items-center pt-1">
-                <span className="text-sm font-bold text-white">Saldo final</span>
-                <span className={`text-lg font-black ${saldoFinal < 0 ? 'text-red-500' : 'text-[#00E676]'}`}>
-                  R$ {formatBRL(saldoFinal)}
-                </span>
-              </div>
-            </div>
 
-            {/* Seções Fatura */}
-            {[
-              { id: 'mae', title: '💳 Cartão da Mãe', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
-              { id: 'meu_cartao', title: '💙 Meu Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
-              { id: 'a_receber', title: '💰 A Receber', color: '#00E676', bg: '#1B2D24', border: '#214332', total: aReceberTotal },
-            ].map(sec => (
-              <div key={sec.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex flex-col gap-3">
-                <div className="flex justify-between items-center">
+                <div className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-bold text-white">{sec.title}</h3>
-                    <span className="text-xs text-gray-400">Total: R$ {formatBRL(sec.total)}</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold block mb-1">
+                      MEU DINHEIRO DISPONÍVEL
+                    </span>
+                    <span className="text-2xl font-black text-[#00E676]">R$ {formatBRL(availableMoney)}</span>
                   </div>
                   <button
-                    onClick={() => openAddFaturaItem(sec.id)}
-                    className="w-9 h-9 rounded-xl font-bold text-lg flex items-center justify-center"
-                    style={{ backgroundColor: sec.bg, color: sec.color, borderColor: sec.border, borderWidth: '1px' }}
+                    onClick={() => {
+                      setMoneyInput(formatBRL(availableMoney));
+                      setIsEditMoneyOpen(true);
+                    }}
+                    className="bg-[#242432] hover:bg-[#2e2e3f] text-xs font-semibold px-3 py-1.5 rounded-full text-gray-300 border border-[#323246]"
                   >
-                    +
+                    ✏️ Editar
                   </button>
                 </div>
-                <div className="flex flex-col gap-2 pt-1">
-                  {faturaItems.filter(i => i.category === sec.id).length === 0 ? (
-                    <p className="text-xs text-gray-500 text-center py-2">Nenhum item cadastrado</p>
+
+                <div className="bg-[#141A18] p-4 rounded-2xl border border-[#1C382B] flex flex-col gap-3">
+                  <h2 className="text-sm font-bold text-gray-200">Resumo do mês</h2>
+                  <div className="flex flex-col gap-2.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-300">💰 Dinheiro disponível</span>
+                      <span className="font-bold text-[#00E676]">R$ {formatBRL(availableMoney)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-300">📬 A receber</span>
+                      <span className="font-bold text-[#00E676]">+ R$ {formatBRL(aReceberTotal)}</span>
+                    </div>
+                    <hr className="border-[#21352A] my-0.5" />
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-300">💳 Cartão da mãe</span>
+                      <span className="font-bold text-[#FF4081]">- R$ {formatBRL(cartaoMaeTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-300">💙 Meu cartão</span>
+                      <span className="font-bold text-[#00B0FF]">- R$ {formatBRL(meuCartaoTotal)}</span>
+                    </div>
+                  </div>
+                  <hr className="border-[#21352A] my-0.5" />
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-sm font-bold text-white">Saldo final</span>
+                    <span className={`text-lg font-black ${saldoFinal < 0 ? 'text-red-500' : 'text-[#00E676]'}`}>
+                      R$ {formatBRL(saldoFinal)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Seções Fatura */}
+                {[
+                  { id: 'mae', title: '💳 Cartão da Mãe', color: '#FF4081', bg: '#2A1D28', border: '#3E2337', total: cartaoMaeTotal },
+                  { id: 'meu_cartao', title: '💙 Meu Cartão', color: '#00B0FF', bg: '#1B2836', border: '#1E384D', total: meuCartaoTotal },
+                  { id: 'a_receber', title: '💰 A Receber', color: '#00E676', bg: '#1B2D24', border: '#214332', total: aReceberTotal },
+                ].map(sec => (
+                  <div key={sec.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-sm font-bold text-white">{sec.title}</h3>
+                        <span className="text-xs text-gray-400">Total: R$ {formatBRL(sec.total)}</span>
+                      </div>
+                      <button
+                        onClick={() => openAddFaturaItem(sec.id)}
+                        className="w-9 h-9 rounded-xl font-bold text-lg flex items-center justify-center"
+                        style={{ backgroundColor: sec.bg, color: sec.color, borderColor: sec.border, borderWidth: '1px' }}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2 pt-1">
+                      {faturaItems.filter(i => i.category === sec.id).length === 0 ? (
+                        <p className="text-xs text-gray-500 text-center py-2">Nenhum item cadastrado</p>
+                      ) : (
+                        faturaItems.filter(i => i.category === sec.id).map(item => (
+                          <div key={item.id} className="flex justify-between items-center bg-[#111118] p-3 rounded-xl border border-[#232332] text-xs">
+                            <div>
+                              <span className="font-semibold text-gray-100 block">{item.description}</span>
+                              {sec.id !== 'a_receber' && (
+                                <span className="text-[10px] text-gray-400">
+                                  Total: R$ {formatBRL(item.total_amount)} {item.installments > 1 ? `(${item.installments}x)` : ''}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold" style={{ color: sec.color }}>R$ {formatBRL(item.amount)}</span>
+                              <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* ================= ABA: COMPRAS (COMPARTILHADA) ================= */}
+            {activeTab === 'compras' && (userAllowedTabs.includes('compras') || isAdmin) && (
+              <>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-xs text-gray-400 font-medium">Lista compartilhada 🛒</p>
+                    <h1 className="text-2xl font-extrabold tracking-tight">Minha Lista</h1>
+                  </div>
+                  <button onClick={() => openShopModal()} className="w-12 h-12 bg-[#FF5722] text-white text-2xl font-bold rounded-full flex items-center justify-center shadow-lg">+</button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-between border border-[#272732]">
+                    <span className="text-[10px] text-gray-400 uppercase font-semibold">Total</span>
+                    <span className="text-sm font-bold text-white mt-1">R$ {formatBRL(shopTotalValue)}</span>
+                  </div>
+                  <div className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-between border border-[#272732]">
+                    <span className="text-[10px] text-gray-400 uppercase font-semibold">Itens</span>
+                    <span className="text-sm font-bold text-white mt-1">{shopTotalItemsCount}</span>
+                  </div>
+                  <button onClick={handleClearShopList} className="bg-[#1C1C24] p-3 rounded-2xl flex items-center justify-center border border-[#272732] hover:bg-red-950/30">
+                    <span className="text-xs font-bold text-red-500">Limpar</span>
+                  </button>
+                </div>
+
+                <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                  {SHOP_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.name}
+                      onClick={() => setSelectedShopCategory(cat.name)}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap ${
+                        selectedShopCategory === cat.name ? 'bg-[#FF5722] text-white' : 'bg-[#1C1C24] text-gray-300 border border-[#272732]'
+                      }`}
+                    >
+                      <span>{cat.icon}</span>
+                      <span>{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {filteredShopItems.length === 0 ? (
+                    <div className="text-center text-gray-500 py-10 text-sm">Nenhum item na lista compartilhada.</div>
                   ) : (
-                    faturaItems.filter(i => i.category === sec.id).map(item => (
-                      <div key={item.id} className="flex justify-between items-center bg-[#111118] p-3 rounded-xl border border-[#232332] text-xs">
-                        <div>
-                          <span className="font-semibold text-gray-100 block">{item.description}</span>
-                          {sec.id !== 'a_receber' && (
-                            <span className="text-[10px] text-gray-400">
-                              Total: R$ {formatBRL(item.total_amount)} {item.installments > 1 ? `(${item.installments}x)` : ''}
+                    filteredShopItems.map((item) => (
+                      <div key={item.id} className="bg-[#1C1C24] p-4 rounded-2xl flex justify-between items-center border-l-4 border-l-[#00E676] border-y border-r border-[#272732]">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="font-semibold text-sm text-gray-100">{item.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="bg-[#272732] text-xs px-2.5 py-0.5 rounded-full text-gray-300 flex items-center gap-1">
+                              {SHOP_CATEGORIES.find((c) => c.name === item.category)?.icon || '📦'} {item.category}
                             </span>
-                          )}
+                            <span className="text-xs text-gray-400 font-medium">x{item.quantity}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold" style={{ color: sec.color }}>R$ {formatBRL(item.amount)}</span>
-                          <button onClick={() => handleDeleteFaturaItem(item.id)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <span className="text-xs text-gray-400 block">Total</span>
+                            <span className="font-bold text-sm text-white">R$ {formatBRL(item.price * item.quantity)}</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button onClick={() => openShopModal(item)} className="w-8 h-8 rounded-full bg-[#272732] text-yellow-400 flex items-center justify-center text-xs">✏️</button>
+                            <button onClick={() => handleDeleteShopItem(item.id)} className="w-8 h-8 rounded-full bg-[#321C24] text-red-400 flex items-center justify-center text-xs">✕</button>
+                          </div>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
-              </div>
-            ))}
-          </>
-        )}
+              </>
+            )}
 
-        {/* ================= ABA: COMPRAS (COMPARTILHADA) ================= */}
-        {activeTab === 'compras' && (userAllowedTabs.includes('compras') || isAdmin) && (
-          <>
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-xs text-gray-400 font-medium">Lista compartilhada 🛒</p>
-                <h1 className="text-2xl font-extrabold tracking-tight">Minha Lista</h1>
-              </div>
-              <button onClick={() => openShopModal()} className="w-12 h-12 bg-[#FF5722] text-white text-2xl font-bold rounded-full flex items-center justify-center shadow-lg">+</button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-between border border-[#272732]">
-                <span className="text-[10px] text-gray-400 uppercase font-semibold">Total</span>
-                <span className="text-sm font-bold text-white mt-1">R$ {formatBRL(shopTotalValue)}</span>
-              </div>
-              <div className="bg-[#1C1C24] p-3 rounded-2xl flex flex-col justify-between border border-[#272732]">
-                <span className="text-[10px] text-gray-400 uppercase font-semibold">Itens</span>
-                <span className="text-sm font-bold text-white mt-1">{shopTotalItemsCount}</span>
-              </div>
-              <button onClick={handleClearShopList} className="bg-[#1C1C24] p-3 rounded-2xl flex items-center justify-center border border-[#272732] hover:bg-red-950/30">
-                <span className="text-xs font-bold text-red-500">Limpar</span>
-              </button>
-            </div>
-
-            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-              {SHOP_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.name}
-                  onClick={() => setSelectedShopCategory(cat.name)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap ${
-                    selectedShopCategory === cat.name ? 'bg-[#FF5722] text-white' : 'bg-[#1C1C24] text-gray-300 border border-[#272732]'
-                  }`}
-                >
-                  <span>{cat.icon}</span>
-                  <span>{cat.name}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {filteredShopItems.length === 0 ? (
-                <div className="text-center text-gray-500 py-10 text-sm">Nenhum item na lista compartilhada.</div>
-              ) : (
-                filteredShopItems.map((item) => (
-                  <div key={item.id} className="bg-[#1C1C24] p-4 rounded-2xl flex justify-between items-center border-l-4 border-l-[#00E676] border-y border-r border-[#272732]">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="font-semibold text-sm text-gray-100">{item.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="bg-[#272732] text-xs px-2.5 py-0.5 rounded-full text-gray-300 flex items-center gap-1">
-                          {SHOP_CATEGORIES.find((c) => c.name === item.category)?.icon || '📦'} {item.category}
-                        </span>
-                        <span className="text-xs text-gray-400 font-medium">x{item.quantity}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-xs text-gray-400 block">Total</span>
-                        <span className="font-bold text-sm text-white">R$ {formatBRL(item.price * item.quantity)}</span>
-                      </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => openShopModal(item)} className="w-8 h-8 rounded-full bg-[#272732] text-yellow-400 flex items-center justify-center text-xs">✏️</button>
-                        <button onClick={() => handleDeleteShopItem(item.id)} className="w-8 h-8 rounded-full bg-[#321C24] text-red-400 flex items-center justify-center text-xs">✕</button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ================= ABA EXCLUSIVA: ADMIN ================= */}
-        {activeTab === 'admin' && isAdmin && (
-          <>
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-xs text-gray-400 font-medium">Painel do Administrador 👑</p>
-                <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Gerenciar Usuários</h1>
-              </div>
-              <button
-                onClick={() => openAdminModal()}
-                className="bg-[#00E676] text-black font-extrabold text-xs px-4 py-2.5 rounded-xl hover:bg-[#00c853] transition-transform active:scale-95"
-              >
-                + Criar Usuário
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {profilesList.length === 0 ? (
-                <div className="text-center text-gray-500 py-10 text-sm">Nenhum perfil cadastrado.</div>
-              ) : (
-                profilesList.map((prof) => (
-                  <div key={prof.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-sm text-white block">{prof.username}</span>
-                      <div className="flex gap-1 mt-1">
-                        {(prof.allowed_tabs || []).map((tab) => (
-                          <span key={tab} className="bg-[#242432] text-gray-300 text-[10px] px-2 py-0.5 rounded-md font-semibold">
-                            {tab === 'fatura' ? '📊 Fatura' : tab === 'compras' ? '🛒 Compras' : tab}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => openAdminModal(prof)} className="w-8 h-8 rounded-full bg-[#272732] text-yellow-400 flex items-center justify-center text-xs">✏️</button>
-                      <button onClick={() => handleDeleteUser(prof.id)} className="w-8 h-8 rounded-full bg-[#321C24] text-red-400 flex items-center justify-center text-xs">✕</button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-      </div>
-
-      {/* BARRA INFERIOR DE NAVEGAÇÃO DINÂMICA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#121218]/95 backdrop-blur-md border-t border-[#22222E] flex justify-around items-center py-2.5 z-40 max-w-md mx-auto">
-        {(userAllowedTabs.includes('fatura') || isAdmin) && (
-          <button onClick={() => setActiveTab('fatura')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'fatura' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FFB74D] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'fatura' ? 'opacity-100' : 'opacity-40'}`}>📊</span>
-            <span className={`text-xs font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>Fatura</span>
-          </button>
-        )}
-
-        {(userAllowedTabs.includes('compras') || isAdmin) && (
-          <button onClick={() => setActiveTab('compras')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'compras' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FF5722] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'compras' ? 'opacity-100' : 'opacity-40'}`}>🛒</span>
-            <span className={`text-xs font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>Compras</span>
-          </button>
-        )}
-
-        {/* ABA ADMIN VISÍVEL APENAS PARA O USUÁRIO ADMIN */}
-        {isAdmin && (
-          <button onClick={() => setActiveTab('admin')} className="flex flex-col items-center gap-1 relative px-6 py-1">
-            {activeTab === 'admin' && <div className="absolute -top-2.5 w-10 h-1 bg-[#00E676] rounded-full" />}
-            <span className={`text-xl ${activeTab === 'admin' ? 'opacity-100' : 'opacity-40'}`}>👑</span>
-            <span className={`text-xs font-bold ${activeTab === 'admin' ? 'text-[#00E676]' : 'text-gray-500'}`}>Admin</span>
-          </button>
-        )}
-      </div>
-
-      {/* MODAL ADMIN (CRIAR/EDITAR USUÁRIOS) */}
-      {isAdminModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-            <h2 className="text-lg font-bold">{editingProfile ? 'Editar Usuário' : 'Novo Usuário'}</h2>
-            <form onSubmit={handleSaveUser} className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Nome de Usuário</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: joao"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                />
-              </div>
-
-              {!editingProfile && (
-                <>
+            {/* ================= ABA EXCLUSIVA: ADMIN ================= */}
+            {activeTab === 'admin' && isAdmin && (
+              <>
+                <div className="flex justify-between items-center">
                   <div>
-                    <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
+                    <p className="text-xs text-gray-400 font-medium">Painel do Administrador 👑</p>
+                    <h1 className="text-2xl font-black tracking-tight text-white mt-0.5">Gerenciar Usuários</h1>
+                  </div>
+                  <button
+                    onClick={() => openAdminModal()}
+                    className="bg-[#00E676] text-black font-extrabold text-xs px-4 py-2.5 rounded-xl hover:bg-[#00c853] transition-transform active:scale-95"
+                  >
+                    + Criar Usuário
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {profilesList.length === 0 ? (
+                    <div className="text-center text-gray-500 py-10 text-sm">Nenhum perfil cadastrado.</div>
+                  ) : (
+                    profilesList.map((prof) => (
+                      <div key={prof.id} className="bg-[#181820] p-4 rounded-2xl border border-[#232330] flex justify-between items-center">
+                        <div>
+                          <span className="font-bold text-sm text-white block">{prof.username}</span>
+                          <div className="flex gap-1 mt-1">
+                            {(prof.allowed_tabs || []).map((tab) => (
+                              <span key={tab} className="bg-[#242432] text-gray-300 text-[10px] px-2 py-0.5 rounded-md font-semibold">
+                                {tab === 'fatura' ? '📊 Fatura' : tab === 'compras' ? '🛒 Compras' : tab}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => openAdminModal(prof)} className="w-8 h-8 rounded-full bg-[#272732] text-yellow-400 flex items-center justify-center text-xs">✏️</button>
+                          <button onClick={() => handleDeleteUser(prof.id)} className="w-8 h-8 rounded-full bg-[#321C24] text-red-400 flex items-center justify-center text-xs">✕</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+          </div>
+
+          {/* BARRA INFERIOR DE NAVEGAÇÃO DINÂMICA */}
+          <div className="fixed bottom-0 left-0 right-0 bg-[#121218]/95 backdrop-blur-md border-t border-[#22222E] flex justify-around items-center py-2.5 z-40 max-w-md mx-auto">
+            {(userAllowedTabs.includes('fatura') || isAdmin) && (
+              <button onClick={() => setActiveTab('fatura')} className="flex flex-col items-center gap-1 relative px-6 py-1">
+                {activeTab === 'fatura' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FFB74D] rounded-full" />}
+                <span className={`text-xl ${activeTab === 'fatura' ? 'opacity-100' : 'opacity-40'}`}>📊</span>
+                <span className={`text-xs font-bold ${activeTab === 'fatura' ? 'text-[#FFB74D]' : 'text-gray-500'}`}>Fatura</span>
+              </button>
+            )}
+
+            {(userAllowedTabs.includes('compras') || isAdmin) && (
+              <button onClick={() => setActiveTab('compras')} className="flex flex-col items-center gap-1 relative px-6 py-1">
+                {activeTab === 'compras' && <div className="absolute -top-2.5 w-10 h-1 bg-[#FF5722] rounded-full" />}
+                <span className={`text-xl ${activeTab === 'compras' ? 'opacity-100' : 'opacity-40'}`}>🛒</span>
+                <span className={`text-xs font-bold ${activeTab === 'compras' ? 'text-[#FF5722]' : 'text-gray-500'}`}>Compras</span>
+              </button>
+            )}
+
+            {/* ABA ADMIN VISÍVEL APENAS PARA O USUÁRIO ADMIN */}
+            {isAdmin && (
+              <button onClick={() => setActiveTab('admin')} className="flex flex-col items-center gap-1 relative px-6 py-1">
+                {activeTab === 'admin' && <div className="absolute -top-2.5 w-10 h-1 bg-[#00E676] rounded-full" />}
+                <span className={`text-xl ${activeTab === 'admin' ? 'opacity-100' : 'opacity-40'}`}>👑</span>
+                <span className={`text-xs font-bold ${activeTab === 'admin' ? 'text-[#00E676]' : 'text-gray-500'}`}>Admin</span>
+              </button>
+            )}
+          </div>
+
+          {/* MODAL ADMIN (CRIAR/EDITAR USUÁRIOS) */}
+          {isAdminModalOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
+                <h2 className="text-lg font-bold">{editingProfile ? 'Editar Usuário' : 'Novo Usuário'}</h2>
+                <form onSubmit={handleSaveUser} className="flex flex-col gap-3">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Nome de Usuário</label>
                     <input
-                      type="password"
+                      type="text"
                       required
-                      placeholder="••••••••"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Ex: joao"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
                       className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
                     />
                   </div>
 
-                  {/* CONTÊINER PARA O RENDERIZADOR DINÂMICO DO TURNSTILE */}
-                  <div id="admin-turnstile-container" className="flex justify-center my-1 min-h-[65px]"></div>
-                </>
-              )}
+                  {!editingProfile && (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Senha Inicial</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
+                        />
+                      </div>
 
-              <div>
-                <label className="text-xs text-gray-400 block mb-2">Abas Permitidas</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTabPermission('fatura')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
-                      selectedTabsForUser.includes('fatura')
-                        ? 'bg-[#FFB74D]/20 border-[#FFB74D] text-[#FFB74D]'
-                        : 'bg-[#111116] border-[#272732] text-gray-500'
-                    }`}
-                  >
-                    📊 Fatura
-                  </button>
+                      {/* CONTÊINER PARA O RENDERIZADOR DINÂMICO DO TURNSTILE */}
+                      <div className="flex flex-col items-center justify-center my-2 min-h-[65px]">
+                        <div id="admin-turnstile-container"></div>
+                      </div>
+                    </>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTabPermission('compras')}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
-                      selectedTabsForUser.includes('compras')
-                        ? 'bg-[#FF5722]/20 border-[#FF5722] text-[#FF5722]'
-                        : 'bg-[#111116] border-[#272732] text-gray-500'
-                    }`}
-                  >
-                    🛒 Compras
-                  </button>
-                </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-2">Abas Permitidas</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTabPermission('fatura')}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
+                          selectedTabsForUser.includes('fatura')
+                            ? 'bg-[#FFB74D]/20 border-[#FFB74D] text-[#FFB74D]'
+                            : 'bg-[#111116] border-[#272732] text-gray-500'
+                        }`}
+                      >
+                        📊 Fatura
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTabPermission('compras')}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold border ${
+                          selectedTabsForUser.includes('compras')
+                            ? 'bg-[#FF5722]/20 border-[#FF5722] text-[#FF5722]'
+                            : 'bg-[#111116] border-[#272732] text-gray-500'
+                        }`}
+                      >
+                        🛒 Compras
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => setIsAdminModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
+                  </div>
+                </form>
               </div>
+            </div>
+          )}
 
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setIsAdminModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EDITAR DINHEIRO DISPONÍVEL */}
-      {isEditMoneyOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-            <h2 className="text-lg font-bold">Editar Dinheiro Disponível</h2>
-            <form onSubmit={handleSaveAvailableMoney} className="flex flex-col gap-3">
-              <input
-                type="text"
-                inputMode="numeric"
-                required
-                placeholder="0,00"
-                value={moneyInput}
-                onChange={(e) => setMoneyInput(formatCurrencyInput(e.target.value))}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-              />
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setIsEditMoneyOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL FATURA */}
-      {isFaturaModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-            <h2 className="text-lg font-bold">Novo Item na Fatura</h2>
-            <form onSubmit={handleSaveFaturaItem} className="flex flex-col gap-3">
-              <input
-                type="text"
-                required
-                placeholder="Descrição"
-                value={faturaDescription}
-                onChange={(e) => setFaturaDescription(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-              />
-              <div className={`grid ${faturaTargetCategory === 'a_receber' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  placeholder="Valor Total (R$)"
-                  value={faturaTotalAmountInput}
-                  onChange={(e) => setFaturaTotalAmountInput(formatCurrencyInput(e.target.value))}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
-                />
-                {faturaTargetCategory !== 'a_receber' && (
+          {/* MODAL EDITAR DINHEIRO DISPONÍVEL */}
+          {isEditMoneyOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
+                <h2 className="text-lg font-bold">Editar Dinheiro Disponível</h2>
+                <form onSubmit={handleSaveAvailableMoney} className="flex flex-col gap-3">
                   <input
-                    type="number"
-                    min="1"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    value={faturaInstallments}
-                    onChange={(e) => setFaturaInstallments(e.target.value)}
+                    placeholder="0,00"
+                    value={moneyInput}
+                    onChange={(e) => setMoneyInput(formatCurrencyInput(e.target.value))}
                     className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
                   />
-                )}
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => setIsEditMoneyOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Salvar</button>
+                  </div>
+                </form>
               </div>
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setIsFaturaModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Adicionar</button>
+            </div>
+          )}
+
+          {/* MODAL FATURA */}
+          {isFaturaModalOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
+                <h2 className="text-lg font-bold">Novo Item na Fatura</h2>
+                <form onSubmit={handleSaveFaturaItem} className="flex flex-col gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Descrição"
+                    value={faturaDescription}
+                    onChange={(e) => setFaturaDescription(e.target.value)}
+                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
+                  />
+                  <div className={`grid ${faturaTargetCategory === 'a_receber' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      placeholder="Valor Total (R$)"
+                      value={faturaTotalAmountInput}
+                      onChange={(e) => setFaturaTotalAmountInput(formatCurrencyInput(e.target.value))}
+                      className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
+                    />
+                    {faturaTargetCategory !== 'a_receber' && (
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={faturaInstallments}
+                        onChange={(e) => setFaturaInstallments(e.target.value)}
+                        className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#00E676]"
+                      />
+                    )}
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => setIsFaturaModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-[#00E676] text-black py-2.5 rounded-xl text-xs font-bold">Adicionar</button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
+            </div>
+          )}
+
+          {/* MODAL COMPRAS */}
+          {isShopModalOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
+                <h2 className="text-lg font-bold">{editingShopItem ? 'Editar Item' : 'Novo Item'}</h2>
+                <form onSubmit={handleSaveShopItem} className="flex flex-col gap-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nome do Produto"
+                    value={shopName}
+                    onChange={(e) => setShopName(e.target.value)}
+                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={shopQuantity}
+                      onChange={(e) => setShopQuantity(e.target.value)}
+                      className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Valor Unitário (R$)"
+                      value={shopPrice}
+                      onChange={(e) => setShopPrice(formatCurrencyInput(e.target.value))}
+                      className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
+                    />
+                  </div>
+                  <select
+                    value={shopCategory}
+                    onChange={(e) => setShopCategory(e.target.value)}
+                    className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
+                  >
+                    {SHOP_CATEGORIES.filter((c) => c.name !== 'Todos').map((c) => (
+                      <option key={c.name} value={c.name}>{c.icon} {c.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => setIsShopModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-[#FF5722] py-2.5 rounded-xl text-xs font-semibold text-white">{editingShopItem ? 'Atualizar' : 'Adicionar'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
-
-      {/* MODAL COMPRAS */}
-      {isShopModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#1C1C24] border border-[#272732] w-full max-w-md rounded-3xl p-6 text-white flex flex-col gap-4">
-            <h2 className="text-lg font-bold">{editingShopItem ? 'Editar Item' : 'Novo Item'}</h2>
-            <form onSubmit={handleSaveShopItem} className="flex flex-col gap-3">
-              <input
-                type="text"
-                required
-                placeholder="Nome do Produto"
-                value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={shopQuantity}
-                  onChange={(e) => setShopQuantity(e.target.value)}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
-                />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Valor Unitário (R$)"
-                  value={shopPrice}
-                  onChange={(e) => setShopPrice(formatCurrencyInput(e.target.value))}
-                  className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
-                />
-              </div>
-              <select
-                value={shopCategory}
-                onChange={(e) => setShopCategory(e.target.value)}
-                className="w-full bg-[#111116] border border-[#272732] rounded-xl px-3 py-2 text-base focus:outline-none focus:border-[#FF5722]"
-              >
-                {SHOP_CATEGORIES.filter((c) => c.name !== 'Todos').map((c) => (
-                  <option key={c.name} value={c.name}>{c.icon} {c.name}</option>
-                ))}
-              </select>
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => setIsShopModalOpen(false)} className="flex-1 bg-[#272732] py-2.5 rounded-xl text-xs font-semibold text-gray-300">Cancelar</button>
-                <button type="submit" className="flex-1 bg-[#FF5722] py-2.5 rounded-xl text-xs font-semibold text-white">{editingShopItem ? 'Atualizar' : 'Adicionar'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-    </div>
+    </>
   );
 }
