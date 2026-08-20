@@ -123,15 +123,37 @@ export default function App() {
     };
   }, [session]);
 
-  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE (LOGIN E ADMIN)
+  // REGISTRAR CALLBACKS DO CLOUDFLARE TURNSTILE PARA O LOGIN INICIAL
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.onTurnstileSuccess = (token) => setCaptchaToken(token);
       window.onTurnstileExpire = () => setCaptchaToken('');
-      window.onAdminTurnstileSuccess = (token) => setAdminCaptchaToken(token);
-      window.onAdminTurnstileExpire = () => setAdminCaptchaToken('');
     }
   }, []);
+
+  // RENDERIZAR CAPTCHA DINAMICAMENTE NO MODAL DE ADMIN
+  useEffect(() => {
+    if (isAdminModalOpen && !editingProfile) {
+      setAdminCaptchaToken('');
+      const timer = setTimeout(() => {
+        const container = document.getElementById('admin-turnstile-container');
+        if (window.turnstile && container) {
+          container.innerHTML = '';
+          try {
+            window.turnstile.render('#admin-turnstile-container', {
+              sitekey: TURNSTILE_SITE_KEY,
+              callback: (token) => setAdminCaptchaToken(token),
+              'expired-callback': () => setAdminCaptchaToken(''),
+            });
+          } catch (err) {
+            console.error('Erro ao renderizar Turnstile:', err);
+          }
+        }
+      }, 150);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isAdminModalOpen, editingProfile]);
 
   // 2. BUSCAR DADOS E PERMISSÕES DE ABAS QUANDO LOGADO
   useEffect(() => {
@@ -849,15 +871,8 @@ export default function App() {
                     />
                   </div>
 
-                  {/* CAPTCHA PARA O MODAL DO ADMIN */}
-                  <div className="flex justify-center my-1 min-h-[65px]">
-                    <div 
-                      className="cf-turnstile" 
-                      data-sitekey={TURNSTILE_SITE_KEY}
-                      data-callback="onAdminTurnstileSuccess"
-                      data-expired-callback="onAdminTurnstileExpire"
-                    ></div>
-                  </div>
+                  {/* CONTÊINER PARA O RENDERIZADOR DINÂMICO DO TURNSTILE */}
+                  <div id="admin-turnstile-container" className="flex justify-center my-1 min-h-[65px]"></div>
                 </>
               )}
 
