@@ -203,6 +203,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    window.location.reload();
   };
 
   // --- AÇÕES COMPRAS (UNIVERSAL) ---
